@@ -1,0 +1,30 @@
+{
+  "name": "libmupass",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automated museum pass reservation service for KCLS",
+  "scripts": {
+    "build": "npm run build --workspace=apps/web && npm run build --workspace=apps/api",
+    "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\" --names \"api,web\" --prefix-colors \"blue,green\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "lint": "npm run lint --workspace=apps/api && npm run lint --workspace=apps/web",
+    "format": "npm run format --workspace=apps/api && npm run format --workspace=apps/web",
+    "typecheck": "npm run typecheck --workspace=apps/api && npm run typecheck --workspace=apps/web",
+    "clean": "rimraf node_modules apps/api/node_modules apps/api/dist apps/web/node_modules apps/web/dist"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "rimraf": "^5.0.5"
+  }
+}
