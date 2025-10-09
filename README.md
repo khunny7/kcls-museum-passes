@@ -144,6 +144,58 @@ LIBRARY_CARD_NUMBER=your_card_number
 LIBRARY_PIN=your_pin
 ```
 
+## Azure Deployment
+
+This project includes a GitHub Actions workflow for automated deployment to Azure Web Apps.
+
+### Prerequisites
+1. Azure Web App created (Node.js runtime)
+2. Federated credentials configured for OIDC authentication
+
+### Required GitHub Secrets
+
+Add these secrets to your GitHub repository (Settings → Secrets and variables → Actions):
+
+- `AZURE_CLIENT_ID` - The Application (client) ID of your Azure App Registration
+- `AZURE_TENANT_ID` - Your Azure tenant ID
+- `AZURE_SUBSCRIPTION_ID` - Your Azure subscription ID
+
+### Setup Steps
+
+1. **Create Azure Web App**:
+   ```bash
+   az webapp create --name libmupass --resource-group <your-rg> --plan <your-plan> --runtime "NODE:22-lts"
+   ```
+
+2. **Configure OIDC in Azure**:
+   - Go to Azure Portal → App Registrations
+   - Create or select an app registration
+   - Add Federated Credential:
+     - Entity type: Branch
+     - GitHub repository: `khunny7/kcls-museum-passes`
+     - Branch: `main`
+
+3. **Add GitHub Secrets**:
+   - Go to GitHub repository → Settings → Secrets and variables → Actions
+   - Add `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+
+4. **Deploy**:
+   - Push to `main` branch or manually trigger workflow
+   - Workflow will build and deploy automatically
+
+### Manual Deployment
+
+```bash
+# Build the project
+npm run build
+
+# Deploy to Azure using Azure CLI
+az webapp deployment source config-zip \
+  --resource-group <your-rg> \
+  --name libmupass \
+  --src <path-to-zip>
+```
+
 ## 🚀 **Quick Commands**
 
 ```bash
