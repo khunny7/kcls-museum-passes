@@ -9,6 +9,10 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  NODE_VERSION: '22.x'
+  DEPLOY_DIR: deploy
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,19 +25,54 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '22.x'
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: npm install, build, and test
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build API
+        run: npm run build --workspace=apps/api
+
+      - name: Build Web
+        run: npm run build --workspace=apps/web
+
+      - name: Run tests (if any)
+        run: npm run test --if-present
+
+      - name: Prepare deploy folder
         run: |
-          npm install
-          npm run build --if-present
-          npm run test --if-present
+          set -e
+          rm -rf "${DEPLOY_DIR}"
+          mkdir -p "${DEPLOY_DIR}/apps/api"
+          
+          # Copy API runtime files
+          cp -R apps/api/dist "${DEPLOY_DIR}/apps/api/"
+          cp -R apps/api/src "${DEPLOY_DIR}/apps/api/"
+          cp apps/api/package.json "${DEPLOY_DIR}/apps/api/"
+          cp apps/api/tsconfig.json "${DEPLOY_DIR}/apps/api/"
+          
+          # Copy built web assets into API's public folder so it can serve them
+          mkdir -p "${DEPLOY_DIR}/apps/api/public"
+          if [ -d apps/web/dist ]; then
+            cp -R apps/web/dist/* "${DEPLOY_DIR}/apps/api/public/"
+          else
+            echo "ERROR: apps/web/dist not found. Build step failed?"
+            exit 1
+          fi
+          
+          # Copy root files needed for deployment
+          cp package.json "${DEPLOY_DIR}/"
+          cp package-lock.json "${DEPLOY_DIR}/"
+          
+          echo "Contents of deploy folder:"
+          find "${DEPLOY_DIR}" -maxdepth 4 -type f | sed 's/^/  /'
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: ${{ env.DEPLOY_DIR }}
+          retention-days: 1
 
   deploy:
     runs-on: ubuntu-latest
@@ -47,6 +86,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
+          path: .
       
       - name: Login to Azure
         uses: azure/login@v2

@@ -22,6 +22,7 @@ export interface AvailabilitySlot {
   available: boolean;
   digital: boolean;
   physical: boolean;
+  state?: 'available' | 'booked' | 'closed' | 'not-yet-available';  // Distinguish between states
 }
 
 export interface BookingRequest {
@@ -265,67 +266,160 @@ export class PassesService {
     location: string = '0'
   ): Promise<AvailabilitySlot[]> {
     try {
-      // Call the real KCLS availability API
+      // Call the real KCLS availability API - returns HTML calendar
       const url = `/pass/availability/institution`;
       const params = {
         museum: museumId,
         date,
-        digital: digital.toString(),
-        physical: physical.toString(),
+        digital: digital ? '1' : '0',
+        physical: physical ? '1' : '0',
         location
       };
 
       console.log(`Fetching real availability for museum ${museumId} on ${date}`);
       const response = await this.client.get(url, { params });
       
-      console.log('KCLS API response:', response.status, response.data);
+      // Parse the HTML response to extract availability information
+      const $ = cheerio.load(response.data);
+      const slots: AvailabilitySlot[] = [];
       
-      // The KCLS API returns availability data in a specific format
-      if (response.data) {
-        // Handle different possible response formats from KCLS
-        if (Array.isArray(response.data)) {
-          // Direct array of slots
-          return response.data.map((slot: any) => ({
-            date: slot.date || date,
-            passId: slot.id || slot.passId || `pass-${Date.now()}`,
-            available: slot.available !== false, // Default to true unless explicitly false
-            digital,
-            physical
-          }));
-        } else if (response.data.slots && Array.isArray(response.data.slots)) {
-          // Nested slots array
-          return response.data.slots.map((slot: any) => ({
-            date: slot.date || date,
-            passId: slot.id || slot.passId || `pass-${Date.now()}`,
-            available: slot.available !== false,
-            digital,
-            physical
-          }));
-        } else if (response.data.available !== undefined) {
-          // Single availability response
-          return [{
-            date,
-            passId: response.data.id || response.data.passId || `pass-${Date.now()}`,
-            available: response.data.available,
-            digital,
-            physical
-          }];
+      // Parse each day in the calendar
+      $('.day').each((_, dayElement) => {
+        const $day = $(dayElement);
+        
+        // Extract the date from the class name (e.g., "day-2025-10-19")
+        const dayClass = $day.attr('class') || '';
+        const dateMatch = dayClass.match(/day-(\d{4}-\d{2}-\d{2})/);
+        
+        if (!dateMatch) return;
+        
+        const dayDate = dateMatch[1];
+        
+        // Check if there's an availability link (available pass)
+        const availabilityLink = $day.find('a.s-lc-pass-availability');
+        const availabilitySpan = $day.find('span.s-lc-pass-availability');
+        
+        if (availabilityLink.length > 0) {
+          // Available pass - extract pass ID from href
+          const href = availabilityLink.attr('href') || '';
+          const passMatch = href.match(/pass=([a-f0-9]+)/);
+          const passId = passMatch ? passMatch[1] : '';
+          
+          const isDigital = availabilityLink.hasClass('s-lc-pass-digital');
+          const isPhysical = availabilityLink.hasClass('s-lc-pass-physical');
+          
+          slots.push({
+            date: dayDate,
+            passId,
+            available: true,
+            digital: isDigital,
+            physical: isPhysical,
+            state: 'available'
+          });
+        } else if (availabilitySpan.length > 0) {
+          // Distinguish between different unavailable states
+          const isClosed = availabilitySpan.hasClass('s-lc-pass-closed');
+          const isUnavailable = availabilitySpan.hasClass('s-lc-pass-unavailable');
+          const isNotYetAvailable = availabilitySpan.hasClass('s-lc-pass-not-yet-available');
+          
+          // Determine the state
+          let state: 'booked' | 'closed' | 'not-yet-available' = 'booked';
+          if (isClosed) {
+            state = 'closed';
+          } else if (isNotYetAvailable) {
+            state = 'not-yet-available';
+          }
+          
+          slots.push({
+            date: dayDate,
+            passId: '', // No pass ID for unavailable/closed/not-yet-available slots
+            available: false,
+            digital: state === 'closed' ? false : digital,
+            physical: state === 'closed' ? false : physical,
+            state
+          });
         }
-      }
-
-      // If we get here, the response format is unexpected
-      console.warn('Unexpected KCLS API response format:', response.data);
-      return [];
+      });
+      
+      console.log(`Parsed ${slots.length} availability slots from KCLS calendar`);
+      return slots;
       
     } catch (error: any) {
       console.error(`Error fetching real availability for ${museumId}:`, error.message);
       
       // For debugging: log the full error details
       if (error.response) {
-        console.error('KCLS API error response:', error.response.status, error.response.data);
+        console.error('KCLS API error response:', error.response.status);
       }
       
       // Return empty array instead of mock data to show real system status
+      return [];
+    }
+  }
+  
+  async getPassesByDate(
+    date: string,
+    digital: boolean = true,
+    physical: boolean = false,
+    location: string = '0'
+  ): Promise<Pass[]> {
+    try {
+      // Call the KCLS API to get all available passes for a specific date
+      const url = `/pass/availability/date`;
+      const params = {
+        date,
+        digital: digital ? '1' : '0',
+        physical: physical ? '1' : '0',
+        location
+      };
+
+      console.log(`Fetching passes available on ${date} with params:`, params);
+      const response = await this.client.get(url, { params });
+      
+      // Parse the HTML response to extract pass information
+      const $ = cheerio.load(response.data);
+      const passes: Pass[] = [];
+      
+      // Parse each museum card - look for the correct selector based on HAR file
+      $('.s-lc-pass-date-museum').each((_, element) => {
+        const $el = $(element);
+        
+        // Extract museum details from media structure
+        const name = $el.find('h3.media-heading').text().trim();
+        const description = $el.find('.media-body p').first().text().trim();
+        const imageUrl = $el.find('.media-object').attr('src');
+        
+        // Extract pass link and ID from booking link
+        const bookingLink = $el.find('a[href*="/book"]').first();
+        const href = bookingLink.attr('href');
+        
+        if (href && name) {
+          // Extract museum ID from href: /passes/{museumId}/book?pass={passId}...
+          const museumIdMatch = href.match(/\/passes\/([a-f0-9]+)/);
+          const museumId = museumIdMatch ? museumIdMatch[1] : '';
+          
+          if (museumId) {
+            passes.push({
+              id: museumId,
+              name,
+              description,
+              imageUrl: imageUrl?.startsWith('http') ? imageUrl : undefined,
+              available: true // If it's in this list, it's available for this date
+            });
+          }
+        }
+      });
+
+      console.log(`Found ${passes.length} available passes for ${date}`);
+      return passes;
+      
+    } catch (error: any) {
+      console.error(`Error fetching passes for date ${date}:`, error.message);
+      
+      if (error.response) {
+        console.error('KCLS API error response:', error.response.status);
+      }
+      
       return [];
     }
   }

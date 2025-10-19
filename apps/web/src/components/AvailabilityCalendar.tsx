@@ -7,6 +7,7 @@ interface AvailabilitySlot {
   available: boolean
   digital: boolean
   physical: boolean
+  state?: 'available' | 'booked' | 'closed' | 'not-yet-available'
 }
 
 interface BookingResult {
@@ -53,7 +54,7 @@ async function bookPass(passId: string, data: any): Promise<BookingResult> {
   return response.json()
 }
 
-export function AvailabilityCalendar({ passId, selectedDate }: AvailabilityCalendarProps) {
+export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const queryClient = useQueryClient()
 
@@ -62,9 +63,15 @@ export function AvailabilityCalendar({ passId, selectedDate }: AvailabilityCalen
     return date.toISOString().split('T')[0]
   }
 
+  // Format date for display (first day of the month for full month calendar)
+  const getMonthStartDate = (date: Date) => {
+    const firstDay = new Date(date.getFullYear(), date.getMonth(), 1)
+    return formatDate(firstDay)
+  }
+
   const { data: availability, isLoading } = useQuery({
-    queryKey: ['availability', passId, formatDate(currentMonth)],
-    queryFn: () => fetchAvailability(passId, formatDate(currentMonth)),
+    queryKey: ['availability', passId, getMonthStartDate(currentMonth)],
+    queryFn: () => fetchAvailability(passId, getMonthStartDate(currentMonth)),
   })
 
   const bookingMutation = useMutation({
@@ -178,51 +185,46 @@ export function AvailabilityCalendar({ passId, selectedDate }: AvailabilityCalen
           const isCurrentMonth = day.getMonth() === currentMonth.getMonth()
           const isPast = day < today
           
-          // Get all slots for this date and calculate availability
-          const daySlots = availability?.filter(s => s.date === dateStr) || []
-          const availableSlots = daySlots.filter(s => s.available)
-          const totalSlots = daySlots.length
-          
-          const hasAvailability = availableSlots.length > 0 && !isPast
-          const isFullyBooked = totalSlots > 0 && availableSlots.length === 0
-          const hasNoData = totalSlots === 0
-          
-          // Pick the first available slot for booking
-          const firstAvailableSlot = availableSlots[0]
+          // Find availability data for this date
+          const daySlot = availability?.find(s => s.date === dateStr)
+          const isAvailable = daySlot?.state === 'available' && !isPast
+          const isClosed = daySlot?.state === 'closed'
+          const isBooked = daySlot?.state === 'booked'
+          const isNotYetAvailable = daySlot?.state === 'not-yet-available'
           
           return (
             <button
               key={index}
               onClick={() => {
-                if (hasAvailability && firstAvailableSlot) {
-                  handleBooking(firstAvailableSlot)
+                if (isAvailable && daySlot) {
+                  onDateSelect(dateStr)
+                  handleBooking(daySlot)
                 }
               }}
-              disabled={!hasAvailability || bookingMutation.isPending}
+              disabled={!isAvailable || bookingMutation.isPending}
               className={`
-                h-12 text-sm rounded-lg transition-colors relative flex flex-col items-center justify-center
-                ${!isCurrentMonth ? 'text-gray-300' : ''}
-                ${isPast ? 'text-gray-400 cursor-not-allowed' : ''}
-                ${hasAvailability ? 'bg-green-100 text-green-800 hover:bg-green-200 cursor-pointer' : ''}
-                ${isFullyBooked && !isPast ? 'bg-red-100 text-red-800' : ''}
-                ${hasNoData && isCurrentMonth && !isPast ? 'bg-gray-100 text-gray-600' : ''}
-                ${selectedDate === dateStr ? 'ring-2 ring-blue-500' : ''}
+                h-12 text-sm rounded-lg transition-colors relative
+                ${!isCurrentMonth ? 'text-gray-300' : 'font-medium'}
+                ${isPast && isCurrentMonth ? 'text-gray-400 bg-gray-50' : ''}
+                ${isAvailable ? 'bg-green-50 text-green-700 hover:bg-green-100 border-2 border-green-200 cursor-pointer font-semibold' : ''}
+                ${isBooked && isCurrentMonth && !isPast ? 'bg-red-50 text-red-600 border border-red-200' : ''}
+                ${isClosed && isCurrentMonth && !isPast ? 'bg-gray-100 text-gray-500' : ''}
+                ${isNotYetAvailable && isCurrentMonth && !isPast ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : ''}
+                ${selectedDate === dateStr ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
+                ${!daySlot && isCurrentMonth && !isPast ? 'bg-gray-50 text-gray-400' : ''}
               `}
               title={
                 isPast ? 'Past date' :
-                hasAvailability ? `${availableSlots.length} of ${totalSlots} passes available` :
-                isFullyBooked ? 'All passes booked' :
-                'No passes available'
+                isAvailable ? 'Pass available - click to book' :
+                isBooked ? 'All passes booked for this date' :
+                isClosed ? 'Museum closed' :
+                isNotYetAvailable ? 'Not yet available - check back closer to the date' :
+                'Not available'
               }
             >
-              <span className="font-medium">{day.getDate()}</span>
-              {totalSlots > 0 && isCurrentMonth && !isPast && (
-                <span className="text-xs">
-                  {availableSlots.length}/{totalSlots}
-                </span>
-              )}
-              {bookingMutation.isPending && daySlots.some(s => s.date === dateStr) && (
-                <div className="absolute inset-0 flex items-center justify-center">
+              {day.getDate()}
+              {bookingMutation.isPending && daySlot?.date === dateStr && (
+                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 </div>
               )}
@@ -232,23 +234,34 @@ export function AvailabilityCalendar({ passId, selectedDate }: AvailabilityCalen
       </div>
 
       <div className="mt-4 space-y-2">
-        <div className="flex flex-wrap gap-4 text-sm">
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded mr-2"></div>
-            <span>Available passes</span>
+        <div className="flex flex-wrap gap-4 text-xs">
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 bg-green-50 border-2 border-green-200 rounded"></div>
+            <span className="text-gray-700">Available</span>
           </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-red-100 border border-red-200 rounded mr-2"></div>
-            <span>Fully booked</span>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 bg-red-50 border border-red-200 rounded"></div>
+            <span className="text-gray-700">Fully booked</span>
           </div>
-          <div className="flex items-center">
-            <div className="w-4 h-4 bg-gray-100 border border-gray-200 rounded mr-2"></div>
-            <span>No passes offered</span>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 bg-yellow-50 border border-yellow-200 rounded"></div>
+            <span className="text-gray-700">Not yet available</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 bg-gray-100 rounded"></div>
+            <span className="text-gray-700">Closed</span>
           </div>
         </div>
-        <p className="text-xs text-gray-500">
-          Numbers show available/total passes for each day. Click any green date to book.
-        </p>
+        {availability && availability.some(s => s.available) && (
+          <p className="text-xs text-gray-600">
+            <strong>✓</strong> Green dates have passes available. Click to book.
+          </p>
+        )}
+        {availability && availability.some(s => s.state === 'not-yet-available') && (
+          <p className="text-xs text-yellow-700">
+            <strong>ⓘ</strong> Yellow dates are beyond the booking window. Check back closer to the date.
+          </p>
+        )}
       </div>
     </div>
   )

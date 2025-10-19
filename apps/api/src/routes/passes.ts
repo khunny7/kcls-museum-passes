@@ -16,6 +16,29 @@ passesRouter.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/passes/by-date - Get all available passes for a specific date
+passesRouter.get('/by-date', async (req: Request, res: Response) => {
+  try {
+    const { date, digital = 'true', physical = 'false', location = '0' } = req.query;
+    
+    if (!date || typeof date !== 'string') {
+      return res.status(400).json({ error: 'Date parameter is required' });
+    }
+
+    const passes = await passesService.getPassesByDate(
+      date,
+      digital === 'true',
+      physical === 'true',
+      location as string
+    );
+    
+    res.json(passes);
+  } catch (error) {
+    console.error(`Failed to fetch passes for date ${req.query.date}:`, error);
+    res.status(500).json({ error: 'Failed to fetch passes by date' });
+  }
+});
+
 // GET /api/passes/:id - Get pass details
 passesRouter.get('/:id', async (req: Request, res: Response) => {
   try {
