@@ -1,17 +1,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { AxiosInstance } from 'axios';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load museum metadata
-const museumsData = JSON.parse(
-  readFileSync(join(__dirname, '../data/museums.json'), 'utf-8')
-);
+import museumsDataJson from '../data/museums.json';
 
 export interface MuseumMetadata {
   id: string;
@@ -23,6 +13,12 @@ export interface MuseumMetadata {
   price: string;
   website: string;
 }
+
+type MuseumsDataFile = {
+  museums: MuseumMetadata[];
+};
+
+const museumsData = museumsDataJson as MuseumsDataFile;
 
 export interface Pass {
   id: string;

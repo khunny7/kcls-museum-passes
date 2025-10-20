@@ -50,12 +50,6 @@ jobs:
           cp -R apps/api/src "${DEPLOY_DIR}/apps/api/"
           cp apps/api/package.json "${DEPLOY_DIR}/apps/api/"
           cp apps/api/tsconfig.json "${DEPLOY_DIR}/apps/api/"
-
-          # Ensure static data files are deployed alongside the compiled API
-          if [ -d apps/api/src/data ]; then
-            mkdir -p "${DEPLOY_DIR}/apps/api/data"
-            cp -R apps/api/src/data/* "${DEPLOY_DIR}/apps/api/data/"
-          fi
           
           # Copy built web assets into API's public folder so it can serve them
           mkdir -p "${DEPLOY_DIR}/apps/api/public"
