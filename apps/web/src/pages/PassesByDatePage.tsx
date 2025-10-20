@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PassCard } from '../components/PassCard'
@@ -19,7 +19,9 @@ async function fetchPassesByDate(date: string): Promise<Pass[]> {
     location: '0'
   })
   
-  const response = await fetch(`/api/passes/by-date?${params}`)
+  const response = await fetch(`/api/passes/by-date?${params}`, {
+    cache: 'no-store'
+  })
   if (!response.ok) {
     throw new Error('Failed to fetch passes for date')
   }
@@ -28,6 +30,7 @@ async function fetchPassesByDate(date: string): Promise<Pass[]> {
 
 export function PassesByDatePage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   
   // Default to tomorrow's date
   const tomorrow = new Date()
@@ -36,14 +39,27 @@ export function PassesByDatePage() {
   
   const [selectedDate, setSelectedDate] = useState<string>(defaultDate)
 
-  const { data: passes, isLoading, error } = useQuery({
+  const { data: passes, isLoading, error, refetch } = useQuery({
     queryKey: ['passesByDate', selectedDate],
     queryFn: () => fetchPassesByDate(selectedDate),
     enabled: !!selectedDate,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    networkMode: 'always'
   })
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedDate(e.target.value)
+    const newDate = e.target.value
+    // Remove cache for the new date to force fresh fetch
+    queryClient.removeQueries({ queryKey: ['passesByDate', newDate], exact: true })
+    setSelectedDate(newDate)
+  }
+
+  const handleRefresh = () => {
+    queryClient.removeQueries({ queryKey: ['passesByDate', selectedDate], exact: true })
+    refetch()
   }
 
   // Get today's date for min date validation
@@ -89,6 +105,16 @@ export function PassesByDatePage() {
               day: 'numeric'
             })}
           </span>
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="p-2 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors disabled:opacity-50"
+            title="Refresh passes for this date"
+          >
+            <svg className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
         </div>
       </div>
 

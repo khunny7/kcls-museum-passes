@@ -31,8 +31,10 @@ async function fetchAvailability(passId: string, date: string): Promise<Availabi
     physical: 'false',
     location: '0'
   })
-  
-  const response = await fetch(`/api/passes/${passId}/availability?${params}`)
+
+  const response = await fetch(`/api/passes/${passId}/availability?${params}`, {
+    cache: 'no-store'
+  })
   if (!response.ok) {
     throw new Error('Failed to fetch availability')
   }
@@ -69,10 +71,24 @@ export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: Ava
     return formatDate(firstDay)
   }
 
-  const { data: availability, isLoading } = useQuery({
-    queryKey: ['availability', passId, getMonthStartDate(currentMonth)],
-    queryFn: () => fetchAvailability(passId, getMonthStartDate(currentMonth)),
+  const monthKey = getMonthStartDate(currentMonth)
+
+  const { data: availability, isLoading, refetch } = useQuery({
+    queryKey: ['availability', passId, monthKey],
+    queryFn: () => fetchAvailability(passId, monthKey),
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    refetchInterval: 10000,
+    networkMode: 'always'
   })
+
+  // Force refetch whenever user interacts with dates
+  const handleDateInteraction = () => {
+    refetch()
+  }
 
   const bookingMutation = useMutation({
     mutationFn: (bookingData: any) => bookPass(passId, bookingData),
@@ -129,12 +145,21 @@ export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: Ava
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  const goToMonth = (target: Date) => {
+    const targetKey = getMonthStartDate(target)
+    // Remove the query from cache before switching months to force fresh fetch
+    queryClient.removeQueries({ queryKey: ['availability', passId, targetKey], exact: true })
+    setCurrentMonth(target)
+  }
+
   const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))
+    const next = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)
+    goToMonth(next)
   }
 
   const prevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))
+    const prev = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1)
+    goToMonth(prev)
   }
 
   if (isLoading) {
@@ -151,19 +176,36 @@ export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: Ava
         <button
           onClick={prevMonth}
           className="p-2 hover:bg-gray-100 rounded-lg"
+          title="Previous month"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
         
-        <h3 className="text-lg font-semibold">
-          {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold">
+            {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+          </h3>
+          <button
+            onClick={() => {
+              queryClient.removeQueries({ queryKey: ['availability', passId, monthKey], exact: true })
+              refetch()
+            }}
+            disabled={isLoading}
+            className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-600 transition-colors disabled:opacity-50"
+            title="Refresh availability"
+          >
+            <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
         
         <button
           onClick={nextMonth}
           className="p-2 hover:bg-gray-100 rounded-lg"
+          title="Next month"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -196,6 +238,7 @@ export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: Ava
             <button
               key={index}
               onClick={() => {
+                handleDateInteraction()
                 if (isAvailable && daySlot) {
                   onDateSelect(dateStr)
                   handleBooking(daySlot)

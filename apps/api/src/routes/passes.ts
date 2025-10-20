@@ -5,6 +5,15 @@ import { PassesService } from '../services/passes.js';
 export const passesRouter = Router();
 const passesService = new PassesService();
 
+// Ensure no downstream caching of passes data or availability responses
+passesRouter.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
+
 // GET /api/passes - List all available passes
 passesRouter.get('/', async (req: Request, res: Response) => {
   try {
