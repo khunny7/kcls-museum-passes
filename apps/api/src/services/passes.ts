@@ -1,6 +1,28 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { AxiosInstance } from 'axios';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load museum metadata
+const museumsData = JSON.parse(
+  readFileSync(join(__dirname, '../data/museums.json'), 'utf-8')
+);
+
+export interface MuseumMetadata {
+  id: string;
+  name: string;
+  shortName: string;
+  passesPerDay: number | string;
+  peoplePerPass: number | string;
+  ageRequirement: string;
+  price: string;
+  website: string;
+}
 
 export interface Pass {
   id: string;
@@ -8,6 +30,7 @@ export interface Pass {
   description: string;
   imageUrl?: string;
   available: boolean;
+  metadata?: MuseumMetadata;
 }
 
 export interface PassDetails extends Pass {
@@ -45,6 +68,7 @@ export interface BookingResult {
 export class PassesService {
   private readonly client: AxiosInstance;
   private readonly baseUrl = 'https://rooms.kcls.org';
+  private readonly museums: Map<string, MuseumMetadata>;
 
   constructor() {
     this.client = axios.create({
@@ -54,6 +78,15 @@ export class PassesService {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
+    
+    // Load museums into a Map for quick lookup
+    this.museums = new Map(
+      museumsData.museums.map((m: MuseumMetadata) => [m.id, m])
+    );
+  }
+
+  getMuseumMetadata(passId: string): MuseumMetadata | undefined {
+    return this.museums.get(passId);
   }
 
   async getAllPasses(): Promise<Pass[]> {
@@ -85,7 +118,8 @@ export class PassesService {
               name,
               description,
               imageUrl: imageUrl?.startsWith('http') ? imageUrl : `https://d2jv02qf7xgjwx.cloudfront.net${imageUrl}`,
-              available: true // We'll check actual availability via the API
+              available: true, // We'll check actual availability via the API
+              metadata: this.getMuseumMetadata(id)
             });
           }
         }
@@ -235,22 +269,35 @@ export class PassesService {
 
   async getPassDetails(id: string): Promise<PassDetails | null> {
     try {
+      console.log(`Fetching pass details for ${id} from KCLS...`);
       const response = await this.client.get(`/passes/${id}`);
       const $ = cheerio.load(response.data);
       
-      const name = $('.s-lc-eq-location-name').text().trim();
-      const description = $('.s-lc-eq-location-description').text().trim();
-      const fullDescription = $('.s-lc-eq-location-details').text().trim();
-      const imageUrl = $('.s-lc-eq-location-image img').attr('src');
+      // Extract pass details from the page
+      const name = $('h1.s-lc-public-header-title, .s-lc-eq-location-name').first().text().trim();
+      const description = $('.s-lc-location-description p').first().text().trim() || 
+                         $('.s-lc-eq-location-description').text().trim();
+      
+      // Get full description (may include multiple paragraphs)
+      let fullDescription = '';
+      $('.s-lc-location-description').each((_, el) => {
+        fullDescription += $(el).text().trim() + '\n\n';
+      });
+      
+      const imageUrl = $('.s-lc-location-image img, .s-lc-eq-location-image img').first().attr('src');
+      
+      // Get metadata
+      const metadata = this.getMuseumMetadata(id);
       
       return {
         id,
-        name,
-        description,
-        fullDescription,
+        name: name || metadata?.name || 'Unknown Museum',
+        description: description || 'No description available',
+        fullDescription: fullDescription.trim() || description,
         location: 'King County Library System',
-        imageUrl,
-        available: true
+        imageUrl: imageUrl?.startsWith('http') ? imageUrl : `https://d2jv02qf7xgjwx.cloudfront.net${imageUrl}`,
+        available: true,
+        metadata
       };
     } catch (error) {
       console.error(`Error fetching pass details for ${id}:`, error);

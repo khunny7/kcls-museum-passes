@@ -1,0 +1,124 @@
+{
+  "museums": [
+    {
+      "id": "6a9d5eb8d7f8",
+      "name": "KidsQuest Children's Museum",
+      "shortName": "KidsQuest",
+      "passesPerDay": 8,
+      "peoplePerPass": 2,
+      "ageRequirement": "All ages (under 1 free)",
+      "price": "Contact museum for pricing",
+      "website": "https://www.kidsquestmuseum.org"
+    },
+    {
+      "id": "dcb899890d0c",
+      "name": "MOHAI",
+      "shortName": "MOHAI",
+      "passesPerDay": 2,
+      "peoplePerPass": 2,
+      "ageRequirement": "Ages 15+ (14 and under free)",
+      "price": "Contact museum for pricing",
+      "website": "https://mohai.org"
+    },
+    {
+      "id": "33c1f0af9b02",
+      "name": "MOPOP",
+      "shortName": "MoPOP",
+      "passesPerDay": 8,
+      "peoplePerPass": "2 adults + 2 youths (ages 5-17)",
+      "ageRequirement": "Ages 5-17 for youths (4 and under free)",
+      "price": "Contact museum for pricing",
+      "website": "https://www.mopop.org"
+    },
+    {
+      "id": "ba4a1c71f547",
+      "name": "Museum of Flight",
+      "shortName": "Museum of Flight",
+      "passesPerDay": 2,
+      "peoplePerPass": "2 adults + 2 youths (ages 5+)",
+      "ageRequirement": "Ages 5+ (under 5 free)",
+      "price": "Contact museum for pricing",
+      "website": "https://www.museumofflight.org"
+    },
+    {
+      "id": "b03f547b9c80",
+      "name": "Northwest African American Museum",
+      "shortName": "NAAM",
+      "passesPerDay": 8,
+      "peoplePerPass": "Family group (up to 2 adults and all children)",
+      "ageRequirement": "All ages",
+      "price": "Contact museum for pricing",
+      "website": "https://www.naamnw.org"
+    },
+    {
+      "id": "6bccded8c288",
+      "name": "Northwest Railway Museum",
+      "shortName": "NW Railway Museum",
+      "passesPerDay": 4,
+      "peoplePerPass": "2 adults + 2 youths (ages 2-17)",
+      "ageRequirement": "Youths ages 2-17 counted; under 2 free",
+      "price": "Contact museum for pricing; general admission only (special events & Ride the Rails not included)",
+      "website": "https://www.trainmuseum.org"
+    },
+    {
+      "id": "cd3534a4e786",
+      "name": "Rhododendron Species Botanical Garden",
+      "shortName": "RSBG",
+      "passesPerDay": 4,
+      "peoplePerPass": 5,
+      "ageRequirement": "Ages 13+ require pass; 12 and under free",
+      "price": "General admission only; special exhibits or ticketed events not included",
+      "website": "https://www.rhodygarden.org"
+    },
+    {
+      "id": "8e456682901d",
+      "name": "Seattle Aquarium",
+      "shortName": "Seattle Aquarium",
+      "passesPerDay": 12,
+      "peoplePerPass": 4,
+      "ageRequirement": "Ages 4+ (ages 3 and under free)",
+      "price": "Contact museum for pricing",
+      "website": "https://www.seattleaquarium.org"
+    },
+    {
+      "id": "14621cebb10b",
+      "name": "Seattle Art Museum",
+      "shortName": "SAM",
+      "passesPerDay": 12,
+      "peoplePerPass": "2 people ages 15+",
+      "ageRequirement": "Youth under 15 enter free; pass admits ages 15+",
+      "price": "General admission; inquire onsite for special exhibitions if space permits",
+      "website": "https://www.seattleartmuseum.org"
+    },
+    {
+      "id": "0cc2150f16b9",
+      "name": "Washington State History Museum",
+      "shortName": "WA History Museum",
+      "passesPerDay": 12,
+      "peoplePerPass": "2 adults + 4 youths (ages 6+)",
+      "ageRequirement": "Youth ages 6+ counted; ages 5 and under free",
+      "price": "General admission only; single entry (not valid for field trips or group tours)",
+      "website": "https://www.washingtonhistory.org"
+    },
+    {
+      "id": "9ec25160a8a0",
+      "name": "Wing Luke Museum",
+      "shortName": "Wing Luke Museum",
+      "passesPerDay": 3,
+      "peoplePerPass": "2 people ages 5+",
+      "ageRequirement": "Ages 5+ require pass; ages 4 and under, caregivers, and paraeducators free",
+      "price": "General admission plus Historic Hotel Tour as space allows",
+      "website": "https://www.wingluke.org"
+    },
+    {
+      "id": "15d03dcb51d3",
+      "name": "Woodland Park Zoo",
+      "shortName": "Woodland Park Zoo",
+      "passesPerDay": 5,
+      "peoplePerPass": 4,
+      "ageRequirement": "Ages 3+ (ages 2 and under free)",
+      "price": "Contact museum for pricing",
+      "website": "https://www.zoo.org"
+    }
+  ]
+}

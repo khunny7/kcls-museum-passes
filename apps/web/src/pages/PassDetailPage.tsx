@@ -3,6 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { AvailabilityCalendar } from '../components/AvailabilityCalendar'
 
+interface MuseumMetadata {
+  id: string
+  name: string
+  shortName: string
+  passesPerDay: number | string
+  peoplePerPass: number | string
+  ageRequirement: string
+  website: string
+}
+
 interface PassDetails {
   id: string
   name: string
@@ -11,6 +21,7 @@ interface PassDetails {
   location: string
   imageUrl?: string
   available: boolean
+  metadata?: MuseumMetadata
 }
 
 async function fetchPassDetails(id: string): Promise<PassDetails> {
@@ -61,65 +72,103 @@ export function PassDetailPage() {
   }
 
   return (
-    <div>
+    <div className="space-y-8">
       <button
         onClick={() => navigate('/')}
-        className="mb-6 text-blue-600 hover:text-blue-800 font-medium flex items-center"
+        className="inline-flex items-center gap-2 rounded-full bg-white/70 px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm ring-1 ring-blue-100 transition hover:-translate-y-0.5 hover:bg-white"
       >
-        <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M15 18l-6-6 6-6" />
         </svg>
         Back to all passes
       </button>
 
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-        <div className="md:flex">
-          <div className="md:w-1/3">
-            {pass.imageUrl ? (
-              <img
-                src={pass.imageUrl}
-                alt={pass.name}
-                className="w-full h-64 md:h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-64 md:h-full bg-gray-200 flex items-center justify-center">
-                <svg className="h-24 w-24 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-              </div>
-            )}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="rounded-3xl bg-white/90 p-8 shadow-xl ring-1 ring-slate-200 backdrop-blur">
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-widest text-blue-600">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 6h16" />
+                <path d="M4 12h12" />
+                <path d="M4 18h8" />
+              </svg>
+            </span>
+            Library Pass Program
           </div>
-          
-          <div className="md:w-2/3 p-8">
-            <div className="mb-6">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{pass.name}</h1>
-              <p className="text-lg text-gray-600 mb-4">{pass.description}</p>
-              
-              {pass.fullDescription && (
-                <div className="prose prose-gray max-w-none">
-                  <p>{pass.fullDescription}</p>
-                </div>
-              )}
-              
-              <div className="mt-4 flex items-center text-sm text-gray-500">
-                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                {pass.location}
+
+          <h1 className="mt-4 text-3xl font-bold text-slate-900 md:text-4xl">{pass.name}</h1>
+          <p className="mt-3 text-lg text-slate-600">{pass.description}</p>
+
+          {pass.fullDescription && (
+            <div className="mt-6 rounded-2xl bg-slate-50/80 p-6 text-sm text-slate-600">
+              <p className="whitespace-pre-line leading-relaxed">{pass.fullDescription}</p>
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 font-semibold text-emerald-600">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              {pass.available ? 'Currently available' : 'Check availability calendar'}
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
+                <path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {pass.location}
+            </span>
+          </div>
+
+          {pass.metadata && (
+            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+                <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Passes per day</span>
+                <p className="mt-2 text-xl font-semibold text-blue-900">{pass.metadata.passesPerDay}</p>
+                <p className="mt-1 text-xs text-blue-600/70">Digital pass allotment released each morning</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Admits</span>
+                <p className="mt-2 text-xl font-semibold text-emerald-900">{pass.metadata.peoplePerPass}</p>
+                <p className="mt-1 text-xs text-emerald-600/70">All guests must arrive together</p>
+              </div>
+              <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
+                <span className="text-xs font-semibold uppercase tracking-wide text-violet-600">Age guidance</span>
+                <p className="mt-2 text-sm font-semibold text-violet-900">{pass.metadata.ageRequirement}</p>
+                <p className="mt-1 text-xs text-violet-600/70">Confirm details on museum site before visiting</p>
               </div>
             </div>
+          )}
 
-            <div className="border-t pt-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Select a Date</h2>
-              {id && (
-                <AvailabilityCalendar
-                  passId={id}
-                  selectedDate={selectedDate}
-                  onDateSelect={setSelectedDate}
-                />
-              )}
-            </div>
+          {pass.metadata?.website && (
+            <a
+              href={pass.metadata.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-900/20 transition hover:-translate-y-0.5 hover:bg-slate-800"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4" />
+                <path d="M14 4h6v6" />
+                <path d="M14 10l6-6" />
+              </svg>
+              Visit museum website
+            </a>
+          )}
+        </div>
+
+        <div className="rounded-3xl bg-white/90 p-8 shadow-xl ring-1 ring-slate-200 backdrop-blur">
+          <h2 className="text-xl font-semibold text-slate-900">Reserve an upcoming date</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Pick an available day below to request a pass. Green dates indicate open reservations.
+          </p>
+          <div className="mt-6">
+            {id && (
+              <AvailabilityCalendar
+                passId={id}
+                selectedDate={selectedDate}
+                onDateSelect={setSelectedDate}
+              />
+            )}
           </div>
         </div>
       </div>
