@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { passesRouter } from './routes/passes.js';
 import authRouter from './routes/auth.js';
+import { schedulerRouter } from './routes/scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,7 @@ app.use(express.json());
 // API routes
 app.use('/api/auth', authRouter);
 app.use('/api/passes', passesRouter);
+app.use('/api/scheduler', schedulerRouter);
 
 // Health check endpoint for Azure
 app.get('/health', (req, res) => {

@@ -14,6 +14,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,json}\""
   },
   "dependencies": {
+    "@types/node-schedule": "^2.1.8",
     "@types/tough-cookie": "^4.0.5",
     "axios": "^1.13.1",
     "axios-cookiejar-support": "^6.0.4",

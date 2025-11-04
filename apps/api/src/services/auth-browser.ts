@@ -37,11 +37,13 @@ export class BrowserAuthService {
       try {
         this.browser = await Promise.race([
           puppeteer.launch({
-            headless: false, // Set to false to see the browser window and debug
+            headless: true, // Run in headless mode (no visible browser window)
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-blink-features=AutomationControlled', // Hide automation
+              '--disable-dev-shm-usage', // Overcome limited resource problems
+              '--disable-gpu', // Not needed in headless
             ],
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Browser launch timeout after 30s')), 30000))

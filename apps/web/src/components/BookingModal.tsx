@@ -117,11 +117,11 @@ export function BookingModal({ isOpen, onClose, onConfirm, date, passName, isLoa
                   </svg>
                 </div>
                 <div className="flex-1 text-sm text-yellow-800">
-                  <p className="font-medium mb-1">Important Information</p>
+                  <p className="font-medium mb-1">Automatic Booking</p>
                   <ul className="list-disc list-inside space-y-1 text-yellow-700">
-                    <li>You'll need your KCLS library card</li>
-                    <li>Passes are subject to availability</li>
-                    <li>Check museum hours before visiting</li>
+                    <li>Will automatically log in with your saved credentials</li>
+                    <li>Will complete the reservation in one click</li>
+                    <li>Browser will close when done</li>
                   </ul>
                 </div>
               </div>

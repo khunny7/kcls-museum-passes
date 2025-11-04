@@ -2,8 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { BookingModal } from './BookingModal'
 import { BookingResultModal } from './BookingResultModal'
-import LoginModal from './LoginModal'
-import { useAuth } from '../contexts/AuthContext'
+import { ScheduleFutureModal } from './ScheduleFutureModal'
+import { BookingOptionsModal } from './BookingOptionsModal'
+
+const CREDENTIALS_STORAGE_KEY = 'kcls_credentials'
 
 interface AvailabilitySlot {
   date: string
@@ -63,56 +65,156 @@ async function bookPass(passId: string, data: any): Promise<BookingResult> {
 }
 
 export function AvailabilityCalendar({ passId, museumId, passName, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
-  const { session, isAuthenticated } = useAuth()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [showBookingModal, setShowBookingModal] = useState(false)
-  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [showScheduleModal, setShowScheduleModal] = useState(false)
+  const [showBookingOptionsModal, setShowBookingOptionsModal] = useState(false)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
+  const [schedulingDate, setSchedulingDate] = useState<string>('')
+  const [isScheduling, setIsScheduling] = useState(false)
   const [bookingResult, setBookingResult] = useState<{ success: boolean; message: string; bookingId?: string; authUrl?: string } | null>(null)
   const queryClient = useQueryClient()
 
-  // Generate the booking URL for this museum and date
   const getBookingUrl = (date: string) => {
     return `https://rooms.kcls.org/passes/${museumId}/book?digital=true&physical=false&location=0&date=${date}`
   }
 
   const handleBooking = (slot: AvailabilitySlot) => {
     if (!slot.available) return
-    setSelectedSlot(slot)
     
-    // Check if user is authenticated
-    if (!isAuthenticated) {
-      // Show login modal with the booking URL for this specific museum and date
-      setShowLoginModal(true)
-    } else {
-      // User is authenticated, show booking confirmation modal
-      setShowBookingModal(true)
+    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    if (!stored) {
+      alert('Please set your library credentials first using the button in the header.')
+      return
     }
+
+    let credentials
+    try {
+      credentials = JSON.parse(stored)
+      if (!credentials.libraryCard || !credentials.pin) {
+        alert('Invalid credentials stored. Please update your credentials.')
+        return
+      }
+    } catch (e) {
+      alert('Invalid credentials stored. Please update your credentials.')
+      return
+    }
+
+    setSelectedSlot(slot)
+    setShowBookingOptionsModal(true)
   }
 
-  // After login succeeds, proceed to booking automatically
-  const handleLoginSuccess = (sessionId: string) => {
-    setShowLoginModal(false)
+  const handleBookNow = () => {
+    setShowBookingModal(true)
+  }
+
+  const handleScheduleFromOptions = () => {
     if (selectedSlot) {
-      // Automatically proceed with booking using the fresh sessionId
-      bookingMutation.mutate({
-        date: selectedSlot.date,
-        passId: selectedSlot.passId,
-        digital: selectedSlot.digital,
-        physical: selectedSlot.physical,
-        location: '0',
-        sessionId: sessionId
-      })
+      setSchedulingDate(selectedSlot.date)
+      setShowScheduleModal(true)
     }
   }
 
-  // Format date for API (YYYY-MM-DD)
+  const handleScheduleFutureBooking = (date: string) => {
+    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    if (!stored) {
+      alert('Please set your library credentials first using the button in the header.')
+      return
+    }
+
+    let credentials
+    try {
+      credentials = JSON.parse(stored)
+      if (!credentials.libraryCard || !credentials.pin) {
+        alert('Invalid credentials stored. Please update your credentials.')
+        return
+      }
+    } catch (e) {
+      alert('Invalid credentials stored. Please update your credentials.')
+      return
+    }
+
+    setSchedulingDate(date)
+    setShowScheduleModal(true)
+  }
+
+  const confirmScheduling = async (scheduledTime: string) => {
+    setShowScheduleModal(false)
+    setIsScheduling(true)
+
+    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    if (!stored) {
+      setBookingResult({
+        success: false,
+        message: 'Credentials not found. Please set your credentials first.'
+      })
+      setShowResultModal(true)
+      setIsScheduling(false)
+      return
+    }
+
+    let credentials
+    try {
+      credentials = JSON.parse(stored)
+    } catch (e) {
+      setBookingResult({
+        success: false,
+        message: 'Invalid credentials. Please update your credentials.'
+      })
+      setShowResultModal(true)
+      setIsScheduling(false)
+      return
+    }
+
+    try {
+      const response = await fetch('/api/scheduler/schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          museumId,
+          date: schedulingDate,
+          passId,
+          credentials,
+          digital: true,
+          physical: false,
+          location: '0',
+          customScheduledTime: scheduledTime
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setBookingResult({
+          success: true,
+          message: `Booking scheduled successfully! It will run automatically on ${new Date(result.booking.scheduledFor).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}.`
+        })
+        setShowResultModal(true)
+      } else {
+        setBookingResult({
+          success: false,
+          message: result.error || 'Failed to schedule booking.'
+        })
+        setShowResultModal(true)
+      }
+    } catch (error: any) {
+      setBookingResult({
+        success: false,
+        message: error.message || 'An error occurred while scheduling.'
+      })
+      setShowResultModal(true)
+    } finally {
+      setIsScheduling(false)
+    }
+  }
+
   const formatDate = (date: Date) => {
     return date.toISOString().split('T')[0]
   }
 
-  // Format date for display (first day of the month for full month calendar)
   const getMonthStartDate = (date: Date) => {
     const firstDay = new Date(date.getFullYear(), date.getMonth(), 1)
     return formatDate(firstDay)
@@ -123,16 +225,14 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
   const { data: availability, isLoading, refetch } = useQuery({
     queryKey: ['availability', passId, monthKey],
     queryFn: () => fetchAvailability(passId, monthKey),
-    staleTime: 60000, // Consider data fresh for 1 minute
-    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
-    refetchOnMount: false, // Don't refetch on mount if data is fresh
-    refetchOnWindowFocus: false, // Don't refetch when window gets focus
-    refetchOnReconnect: true, // Do refetch if network reconnects (makes sense)
-    // refetchInterval: 10000, // REMOVED - no automatic polling
-    networkMode: 'online' // Only fetch when online
+    staleTime: 60000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    networkMode: 'online'
   })
 
-  // Force refetch whenever user interacts with dates
   const handleDateInteraction = () => {
     refetch()
   }
@@ -172,21 +272,75 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
     }
   })
 
-  const confirmBooking = () => {
+  const confirmBooking = async () => {
     if (!selectedSlot) return
     
     setShowBookingModal(false)
-    bookingMutation.mutate({
-      date: selectedSlot.date,
-      passId: selectedSlot.passId,
-      digital: selectedSlot.digital,
-      physical: selectedSlot.physical,
-      location: '0',
-      sessionId: session?.sessionId
-    })
+
+    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    if (!stored) {
+      setBookingResult({
+        success: false,
+        message: 'Credentials not found. Please set your credentials first.'
+      })
+      setShowResultModal(true)
+      return
+    }
+
+    let credentials
+    try {
+      credentials = JSON.parse(stored)
+    } catch (e) {
+      setBookingResult({
+        success: false,
+        message: 'Invalid credentials. Please update your credentials.'
+      })
+      setShowResultModal(true)
+      return
+    }
+
+    try {
+      const bookingUrl = getBookingUrl(selectedSlot.date)
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          libraryCard: credentials.libraryCard,
+          pin: credentials.pin,
+          bookingUrl: bookingUrl
+        }),
+      })
+
+      const loginResult = await loginResponse.json()
+
+      if (!loginResult.success) {
+        setBookingResult({
+          success: false,
+          message: loginResult.error || 'Login failed. Please check your credentials.'
+        })
+        setShowResultModal(true)
+        return
+      }
+
+      bookingMutation.mutate({
+        date: selectedSlot.date,
+        passId: selectedSlot.passId,
+        digital: selectedSlot.digital,
+        physical: selectedSlot.physical,
+        location: '0',
+        sessionId: loginResult.sessionId
+      })
+    } catch (error: any) {
+      setBookingResult({
+        success: false,
+        message: error.message || 'An error occurred during login.'
+      })
+      setShowResultModal(true)
+    }
   }
 
-  // Generate calendar days for current month
   const generateCalendarDays = () => {
     const year = currentMonth.getFullYear()
     const month = currentMonth.getMonth()
@@ -211,7 +365,6 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
 
   const goToMonth = (target: Date) => {
     const targetKey = getMonthStartDate(target)
-    // Remove the query from cache before switching months to force fresh fetch
     queryClient.removeQueries({ queryKey: ['availability', passId, targetKey], exact: true })
     setCurrentMonth(target)
   }
@@ -291,8 +444,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
           const isCurrentMonth = day.getMonth() === currentMonth.getMonth()
           const isPast = day < today
           
-          // Find availability data for this date
-          const daySlot = availability?.find(s => s.date === dateStr)
+          const daySlot = availability?.find((s: any) => s.date === dateStr)
           const isAvailable = daySlot?.state === 'available' && !isPast
           const isClosed = daySlot?.state === 'closed'
           const isBooked = daySlot?.state === 'booked'
@@ -306,9 +458,11 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
                 if (isAvailable && daySlot) {
                   onDateSelect(dateStr)
                   handleBooking(daySlot)
+                } else if (isNotYetAvailable && isCurrentMonth && !isPast) {
+                  handleScheduleFutureBooking(dateStr)
                 }
               }}
-              disabled={!isAvailable || bookingMutation.isPending}
+              disabled={(!isAvailable && !isNotYetAvailable) || bookingMutation.isPending}
               className={`
                 h-12 text-sm rounded-lg transition-colors relative
                 ${!isCurrentMonth ? 'text-gray-300' : 'font-medium'}
@@ -316,7 +470,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
                 ${isAvailable ? 'bg-green-50 text-green-700 hover:bg-green-100 border-2 border-green-200 cursor-pointer font-semibold' : ''}
                 ${isBooked && isCurrentMonth && !isPast ? 'bg-red-50 text-red-600 border border-red-200' : ''}
                 ${isClosed && isCurrentMonth && !isPast ? 'bg-gray-100 text-gray-500' : ''}
-                ${isNotYetAvailable && isCurrentMonth && !isPast ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : ''}
+                ${isNotYetAvailable && isCurrentMonth && !isPast ? 'bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 cursor-pointer' : ''}
                 ${selectedDate === dateStr ? 'ring-2 ring-blue-500 ring-offset-1' : ''}
                 ${!daySlot && isCurrentMonth && !isPast ? 'bg-gray-50 text-gray-400' : ''}
               `}
@@ -325,7 +479,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
                 isAvailable ? 'Pass available - click to book' :
                 isBooked ? 'All passes booked for this date' :
                 isClosed ? 'Museum closed' :
-                isNotYetAvailable ? 'Not yet available - check back closer to the date' :
+                isNotYetAvailable ? 'Click to schedule automatic booking (runs 14 days before at 2pm PST)' :
                 'Not available'
               }
             >
@@ -359,19 +513,27 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
             <span className="text-gray-700">Closed</span>
           </div>
         </div>
-        {availability && availability.some(s => s.available) && (
+        {availability && availability.some((s: any) => s.available) && (
           <p className="text-xs text-gray-600">
-            <strong>✓</strong> Green dates have passes available. Click to book.
+            <strong></strong> Green dates have passes available. Click to book.
           </p>
         )}
-        {availability && availability.some(s => s.state === 'not-yet-available') && (
+        {availability && availability.some((s: any) => s.state === 'not-yet-available') && (
           <p className="text-xs text-yellow-700">
-            <strong>ⓘ</strong> Yellow dates are beyond the booking window. Check back closer to the date.
+            <strong></strong> Yellow dates are beyond the booking window. Click to schedule automatic booking.
           </p>
         )}
       </div>
 
-      {/* Booking Confirmation Modal */}
+      <BookingOptionsModal
+        isOpen={showBookingOptionsModal}
+        onClose={() => setShowBookingOptionsModal(false)}
+        onBookNow={handleBookNow}
+        onSchedule={handleScheduleFromOptions}
+        date={selectedSlot?.date || ''}
+        passName={passName}
+      />
+
       <BookingModal
         isOpen={showBookingModal}
         onClose={() => setShowBookingModal(false)}
@@ -381,7 +543,16 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
         isLoading={bookingMutation.isPending}
       />
 
-      {/* Booking Result Modal */}
+      <ScheduleFutureModal
+        isOpen={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        onConfirm={confirmScheduling}
+        date={schedulingDate}
+        museumId={museumId}
+        passName={passName}
+        isLoading={isScheduling}
+      />
+
       <BookingResultModal
         isOpen={showResultModal}
         onClose={() => setShowResultModal(false)}
@@ -391,16 +562,51 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
         authUrl={bookingResult?.authUrl}
       />
 
-      {/* Login Modal - shown when user tries to book without being authenticated */}
-      <LoginModal
-        isOpen={showLoginModal}
-        onClose={() => {
-          setShowLoginModal(false)
-          setSelectedSlot(null) // Clear the selected slot if they cancel login
-        }}
-        onSuccess={handleLoginSuccess}
-        bookingUrl={selectedSlot ? getBookingUrl(selectedSlot.date) : undefined}
-      />
+      {bookingMutation.isPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
+            <div className="flex flex-col items-center gap-6">
+              <div className="relative">
+                <div className="w-20 h-20 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+              </div>
+              
+              <div className="text-center space-y-2">
+                <h3 className="text-xl font-bold text-gray-900">Processing Your Reservation</h3>
+                <p className="text-sm text-gray-600">
+                  Logging in and completing your booking automatically...
+                </p>
+                <div className="pt-4 space-y-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 justify-center">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span>Authenticating with your credentials</span>
+                  </div>
+                  <div className="flex items-center gap-2 justify-center">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse delay-75"></div>
+                    <span>Navigating to booking page</span>
+                  </div>
+                  <div className="flex items-center gap-2 justify-center">
+                    <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse delay-150"></div>
+                    <span>Completing reservation</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-full bg-gray-100 rounded-full p-1">
+                <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full animate-pulse"></div>
+              </div>
+
+              <p className="text-xs text-gray-400 text-center">
+                Please wait, this may take 15-30 seconds...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
