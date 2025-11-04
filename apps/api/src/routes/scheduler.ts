@@ -57,7 +57,7 @@ schedulerRouter.get('/bookings', (req: Request, res: Response) => {
   try {
     const bookings = schedulerService.getAllScheduledBookings();
     
-    // Remove sensitive credentials from response
+    // Include credentials in response
     const sanitized = bookings.map(b => ({
       id: b.id,
       museumId: b.museumId,
@@ -68,7 +68,8 @@ schedulerRouter.get('/bookings', (req: Request, res: Response) => {
       createdAt: b.createdAt,
       executedAt: b.executedAt,
       result: b.result,
-      hasCredentials: !!b.credentials
+      hasCredentials: !!b.credentials,
+      libraryCard: b.credentials?.libraryCard || null
     }));
 
     res.json({

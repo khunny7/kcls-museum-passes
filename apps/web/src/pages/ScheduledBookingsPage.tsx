@@ -13,6 +13,7 @@ interface ScheduledBooking {
   executedAt?: string
   result?: any
   hasCredentials: boolean
+  libraryCard?: string | null
 }
 
 interface ActiveJob {
@@ -24,6 +25,17 @@ interface ActiveJob {
   nextInvocation: string | null
 }
 
+interface Museum {
+  id: string
+  name: string
+  shortName: string
+  metadata?: {
+    id: string
+    name: string
+    shortName: string
+  }
+}
+
 async function fetchScheduledBookings(): Promise<ScheduledBooking[]> {
   const response = await fetch('/api/scheduler/bookings')
   if (!response.ok) {
@@ -31,6 +43,16 @@ async function fetchScheduledBookings(): Promise<ScheduledBooking[]> {
   }
   const data = await response.json()
   return data.bookings || []
+}
+
+async function fetchMuseums(): Promise<Museum[]> {
+  const response = await fetch('/api/passes')
+  if (!response.ok) {
+    throw new Error('Failed to fetch museums')
+  }
+  // The API returns an array of passes, each with metadata
+  const passes = await response.json()
+  return passes || []
 }
 
 async function fetchActiveJobs(): Promise<ActiveJob[]> {
@@ -72,11 +94,26 @@ export function ScheduledBookingsPage() {
     refetchInterval: 5000 // Refresh every 5 seconds
   })
 
+  const { data: museums = [] } = useQuery({
+    queryKey: ['museums'],
+    queryFn: fetchMuseums,
+    staleTime: 60000 * 5 // Cache for 5 minutes
+  })
+
   const { data: activeJobs = [] } = useQuery({
     queryKey: ['activeJobs'],
     queryFn: fetchActiveJobs,
     refetchInterval: 5000 // Refresh every 5 seconds
   })
+
+  const getMuseumName = (museumId: string): string => {
+    const museum = museums.find(m => m.id === museumId)
+    if (museum) {
+      // If it has metadata, use that name, otherwise use the pass name
+      return museum.metadata?.name || museum.name || museumId
+    }
+    return museumId
+  }
 
   const { data: logs = [] } = useQuery({
     queryKey: ['bookingLogs', selectedBookingId],
@@ -200,6 +237,12 @@ export function ScheduledBookingsPage() {
             <div className="space-y-3">
               {activeJobs.map((job) => (
                 <div key={job.bookingId} className="bg-white rounded-xl p-4 shadow-sm border border-purple-100">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h4 className="font-semibold text-gray-900 text-base">{getMuseumName(job.museumId)}</h4>
+                    <span className="font-mono text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                      {job.museumId}
+                    </span>
+                  </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
                       <span className="text-gray-500 text-xs">Booking ID:</span>
@@ -273,19 +316,39 @@ export function ScheduledBookingsPage() {
               <div className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-3">
                       <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold border ${getStatusColor(booking.status)}`}>
                         {getStatusIcon(booking.status)}
                         {booking.status.toUpperCase()}
                       </span>
-                      <span className="text-sm text-gray-500">ID: {booking.id}</span>
                     </div>
                     
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                      Booking for {new Date(booking.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                    </h3>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="text-xl font-bold text-gray-900">
+                        {getMuseumName(booking.museumId)}
+                      </h3>
+                      <span className="font-mono text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                        {booking.museumId}
+                      </span>
+                    </div>
+                    
+                    <p className="text-base text-gray-600 mb-4">
+                      Booking for {new Date(booking.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </p>
 
                     <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-500">Library Card:</span>
+                        <p className="font-mono text-sm font-medium text-gray-900">
+                          {booking.libraryCard || 'Not available'}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Booking ID:</span>
+                        <p className="font-mono text-xs text-gray-700 bg-gray-100 px-2 py-1 rounded inline-block mt-1">
+                          {booking.id}
+                        </p>
+                      </div>
                       <div>
                         <span className="text-gray-500">Scheduled For:</span>
                         <p className="font-medium text-gray-900">
