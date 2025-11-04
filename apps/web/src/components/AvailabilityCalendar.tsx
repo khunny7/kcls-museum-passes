@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { BookingModal } from './BookingModal'
+import { BookingResultModal } from './BookingResultModal'
 
 interface AvailabilitySlot {
   date: string
@@ -20,6 +22,7 @@ interface BookingResult {
 
 interface AvailabilityCalendarProps {
   passId: string
+  passName?: string
   selectedDate: string
   onDateSelect: (date: string) => void
 }
@@ -56,8 +59,12 @@ async function bookPass(passId: string, data: any): Promise<BookingResult> {
   return response.json()
 }
 
-export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
+export function AvailabilityCalendar({ passId, passName, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [showBookingModal, setShowBookingModal] = useState(false)
+  const [showResultModal, setShowResultModal] = useState(false)
+  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
+  const [bookingResult, setBookingResult] = useState<{ success: boolean; message: string; bookingId?: string; authUrl?: string } | null>(null)
   const queryClient = useQueryClient()
 
   // Format date for API (YYYY-MM-DD)
@@ -94,30 +101,52 @@ export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: Ava
     mutationFn: (bookingData: any) => bookPass(passId, bookingData),
     onSuccess: (result) => {
       if (result.success) {
-        alert('Pass booked successfully!')
+        setBookingResult({
+          success: true,
+          message: 'Your museum pass has been reserved successfully!',
+          bookingId: result.bookingId
+        })
+        setShowResultModal(true)
         queryClient.invalidateQueries({ queryKey: ['availability', passId] })
       } else if (result.requiresAuth) {
-        alert(`Authentication required. Please log in at: ${result.authUrl}`)
+        setBookingResult({
+          success: false,
+          message: 'You need to authenticate to complete this reservation.',
+          authUrl: result.authUrl
+        })
+        setShowResultModal(true)
       } else {
-        alert(`Booking failed: ${result.error}`)
+        setBookingResult({
+          success: false,
+          message: result.error || 'Unable to complete the reservation. Please try again.'
+        })
+        setShowResultModal(true)
       }
     },
     onError: (error) => {
-      alert(`Booking failed: ${error.message}`)
+      setBookingResult({
+        success: false,
+        message: error.message || 'An unexpected error occurred. Please try again.'
+      })
+      setShowResultModal(true)
     }
   })
 
   const handleBooking = (slot: AvailabilitySlot) => {
     if (!slot.available) return
+    setSelectedSlot(slot)
+    setShowBookingModal(true)
+  }
 
-    const confirmed = confirm(`Book pass for ${slot.date}?`)
-    if (!confirmed) return
-
+  const confirmBooking = () => {
+    if (!selectedSlot) return
+    
+    setShowBookingModal(false)
     bookingMutation.mutate({
-      date: slot.date,
-      passId: slot.passId,
-      digital: slot.digital,
-      physical: slot.physical,
+      date: selectedSlot.date,
+      passId: selectedSlot.passId,
+      digital: selectedSlot.digital,
+      physical: selectedSlot.physical,
       location: '0'
     })
   }
@@ -306,6 +335,26 @@ export function AvailabilityCalendar({ passId, selectedDate, onDateSelect }: Ava
           </p>
         )}
       </div>
+
+      {/* Booking Confirmation Modal */}
+      <BookingModal
+        isOpen={showBookingModal}
+        onClose={() => setShowBookingModal(false)}
+        onConfirm={confirmBooking}
+        date={selectedSlot?.date || ''}
+        passName={passName}
+        isLoading={bookingMutation.isPending}
+      />
+
+      {/* Booking Result Modal */}
+      <BookingResultModal
+        isOpen={showResultModal}
+        onClose={() => setShowResultModal(false)}
+        success={bookingResult?.success || false}
+        message={bookingResult?.message || ''}
+        bookingId={bookingResult?.bookingId}
+        authUrl={bookingResult?.authUrl}
+      />
     </div>
   )
 }

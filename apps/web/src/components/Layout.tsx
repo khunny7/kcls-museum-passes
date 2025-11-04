@@ -1,5 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import LoginModal from './LoginModal'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -8,6 +10,8 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { isAuthenticated, session, logout } = useAuth()
+  const [showLoginModal, setShowLoginModal] = useState(false)
 
   const navItems = [
     {
@@ -113,6 +117,30 @@ export function Layout({ children }: LayoutProps) {
               Unofficial resource maintained by Piano8283 Studio
             </div>
 
+            <div className="flex items-center gap-3">
+              {isAuthenticated && session ? (
+                <div className="flex items-center gap-3">
+                  <div className="hidden text-sm sm:block">
+                    <div className="text-xs text-slate-500">Logged in as</div>
+                    <div className="font-medium text-slate-900">{session.libraryCard}</div>
+                  </div>
+                  <button
+                    onClick={logout}
+                    className="rounded-2xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-500/20 transition hover:-translate-y-0.5 hover:bg-red-700"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 hover:bg-blue-700"
+                >
+                  Login
+                </button>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => navigate('/by-date')}
@@ -141,6 +169,8 @@ export function Layout({ children }: LayoutProps) {
       <main className="relative mx-auto w-full max-w-7xl px-4 pb-16 pt-10 sm:px-6 lg:px-8">
         {children}
       </main>
+
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </div>
   )
 }

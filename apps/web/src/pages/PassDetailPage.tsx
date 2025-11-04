@@ -165,6 +165,7 @@ export function PassDetailPage() {
             {id && (
               <AvailabilityCalendar
                 passId={id}
+                passName={pass.name}
                 selectedDate={selectedDate}
                 onDateSelect={setSelectedDate}
               />

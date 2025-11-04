@@ -1,0 +1,17 @@
+Museum Data from KCLS Website:
+
+From passes_list.html summaries:
+- KidsQuest (6a9d5eb8d7f8): "8 passes each day. Each pass admits up to 2 people"
+- MOHAI (dcb899890d0c): "2 passes each day. Each pass admits up to 2 people ages 15 and older"
+- MOPOP (33c1f0af9b02): "8 passes each day. Each pass admits up to 2 adults and 2 youths" (ages 5-17)
+- Museum of Flight (ba4a1c71f547): NO INFO IN SUMMARY
+- NAAM (b03f547b9c80): "8 passes each day..." (CUT OFF)
+- NW Railway (6bccded8c288): NO INFO IN SUMMARY
+- Rhodo Garden (cd3534a4e786): NO INFO IN SUMMARY
+- Seattle Aquarium (8e456682901d): FETCHED - "12 vouchers each day. Each voucher admits up to 4 people ages 4 and older"
+- Seattle Art Museum (14621cebb10b): NO INFO IN SUMMARY
+- WA History Museum (0cc2150f16b9): "12 passes each day. Each pass..." (CUT OFF)
+- Wing Luke (9ec25160a8a0): NO INFO IN SUMMARY
+- Woodland Park Zoo (15d03dcb51d3): FETCHED - "5 passes each day. Each pass admits up to 4 people ages 3 and older"
+
+Need to fetch individual pages for missing data.

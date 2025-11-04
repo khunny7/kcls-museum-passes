@@ -3,6 +3,7 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { passesRouter } from './routes/passes.js';
+import authRouter from './routes/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +25,7 @@ console.log('Environment:', {
 app.use(express.json());
 
 // API routes
+app.use('/api/auth', authRouter);
 app.use('/api/passes', passesRouter);
 
 // Health check endpoint for Azure

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { PassCard } from '../components/PassCard'
 
 interface Pass {
@@ -162,7 +162,9 @@ export function PassesByDatePage() {
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {passes.map((pass) => (
-                  <PassCard key={pass.id} pass={pass} />
+                  <Link key={pass.id} to={`/pass/${pass.id}`}>
+                    <PassCard pass={pass} />
+                  </Link>
                 ))}
               </div>
             </>

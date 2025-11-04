@@ -476,8 +476,13 @@ export class PassesService {
     location: string = '0'
   ): Promise<BookingResult> {
     try {
-      // This is a placeholder - the actual booking flow is complex
-      // and requires authentication with the library system
+      // Build the KCLS booking URL with all necessary parameters
+      const bookingUrl = `${this.baseUrl}/passes/${museumId}/book?` + 
+        `pass=${passId}&` +
+        `date=${date}&` +
+        `digital=${digital ? '1' : '0'}&` +
+        `physical=${physical ? '1' : '0'}&` +
+        `location=${location}`;
       
       console.log('Booking request:', {
         museumId,
@@ -485,15 +490,16 @@ export class PassesService {
         passId,
         digital,
         physical,
-        location
+        location,
+        bookingUrl
       });
 
-      // For now, return a mock success response
+      // Return the KCLS booking URL for the user to complete the booking
       return {
         success: false,
         requiresAuth: true,
-        authUrl: `https://kcls.libapps.com/libapps/libauth?auth_id=1963`,
-        error: 'Authentication required - booking flow not yet implemented'
+        authUrl: bookingUrl,
+        error: 'You will be redirected to KCLS to complete your reservation with your library card.'
       };
     } catch (error) {
       console.error(`Error booking pass ${museumId}:`, error);
