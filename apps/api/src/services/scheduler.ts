@@ -35,12 +35,17 @@ class SchedulerService {
 
   constructor() {
     this.passesService = new PassesService();
-    this.logsDir = path.join(__dirname, '../../logs');
+    // Use a consistent path relative to the project root
+    // This will be apps/api/logs regardless of how the code is run
+    const projectRoot = path.join(__dirname, '../..');
+    this.logsDir = path.join(projectRoot, 'logs');
     
     // Create logs directory if it doesn't exist
     if (!fs.existsSync(this.logsDir)) {
       fs.mkdirSync(this.logsDir, { recursive: true });
     }
+
+    console.log(`📁 Scheduler logs directory: ${this.logsDir}`);
 
     // Load saved bookings on startup
     this.loadScheduledBookings();
@@ -319,6 +324,7 @@ class SchedulerService {
     const bookingsFile = path.join(this.logsDir, 'scheduled_bookings.json');
     
     if (!fs.existsSync(bookingsFile)) {
+      console.log('No saved bookings found, starting fresh');
       return;
     }
 
@@ -331,7 +337,8 @@ class SchedulerService {
           ...b,
           scheduledFor: new Date(b.scheduledFor),
           createdAt: new Date(b.createdAt),
-          executedAt: b.executedAt ? new Date(b.executedAt) : undefined
+          executedAt: b.executedAt ? new Date(b.executedAt) : undefined,
+          logs: b.logs || [] // Ensure logs array exists
         };
 
         this.scheduledBookings.set(booking.id, booking);
@@ -339,12 +346,20 @@ class SchedulerService {
         // Re-schedule pending jobs
         if (booking.status === 'pending') {
           this.scheduleJob(booking);
+          console.log(`Re-scheduled pending job: ${booking.id} for ${booking.scheduledFor}`);
         }
       }
 
-      console.log(`Loaded ${bookings.length} scheduled bookings from disk`);
+      const pendingCount = bookings.filter((b: any) => b.status === 'pending').length;
+      const completedCount = bookings.filter((b: any) => b.status === 'completed').length;
+      const failedCount = bookings.filter((b: any) => b.status === 'failed').length;
+      
+      console.log(`✅ Loaded ${bookings.length} scheduled bookings from disk:`);
+      console.log(`   - ${pendingCount} pending (re-scheduled)`);
+      console.log(`   - ${completedCount} completed`);
+      console.log(`   - ${failedCount} failed`);
     } catch (error) {
-      console.error('Error loading scheduled bookings:', error);
+      console.error('❌ Error loading scheduled bookings:', error);
     }
   }
 }
