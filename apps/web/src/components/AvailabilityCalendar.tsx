@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { BookingModal } from './BookingModal'
 import { BookingResultModal } from './BookingResultModal'
+import LoginModal from './LoginModal'
+import { useAuth } from '../contexts/AuthContext'
 
 interface AvailabilitySlot {
   date: string
@@ -22,6 +24,7 @@ interface BookingResult {
 
 interface AvailabilityCalendarProps {
   passId: string
+  museumId: string
   passName?: string
   selectedDate: string
   onDateSelect: (date: string) => void
@@ -59,13 +62,50 @@ async function bookPass(passId: string, data: any): Promise<BookingResult> {
   return response.json()
 }
 
-export function AvailabilityCalendar({ passId, passName, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
+export function AvailabilityCalendar({ passId, museumId, passName, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
+  const { session, isAuthenticated } = useAuth()
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [showBookingModal, setShowBookingModal] = useState(false)
+  const [showLoginModal, setShowLoginModal] = useState(false)
   const [showResultModal, setShowResultModal] = useState(false)
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null)
   const [bookingResult, setBookingResult] = useState<{ success: boolean; message: string; bookingId?: string; authUrl?: string } | null>(null)
   const queryClient = useQueryClient()
+
+  // Generate the booking URL for this museum and date
+  const getBookingUrl = (date: string) => {
+    return `https://rooms.kcls.org/passes/${museumId}/book?digital=true&physical=false&location=0&date=${date}`
+  }
+
+  const handleBooking = (slot: AvailabilitySlot) => {
+    if (!slot.available) return
+    setSelectedSlot(slot)
+    
+    // Check if user is authenticated
+    if (!isAuthenticated) {
+      // Show login modal with the booking URL for this specific museum and date
+      setShowLoginModal(true)
+    } else {
+      // User is authenticated, show booking confirmation modal
+      setShowBookingModal(true)
+    }
+  }
+
+  // After login succeeds, proceed to booking automatically
+  const handleLoginSuccess = (sessionId: string) => {
+    setShowLoginModal(false)
+    if (selectedSlot) {
+      // Automatically proceed with booking using the fresh sessionId
+      bookingMutation.mutate({
+        date: selectedSlot.date,
+        passId: selectedSlot.passId,
+        digital: selectedSlot.digital,
+        physical: selectedSlot.physical,
+        location: '0',
+        sessionId: sessionId
+      })
+    }
+  }
 
   // Format date for API (YYYY-MM-DD)
   const formatDate = (date: Date) => {
@@ -83,13 +123,13 @@ export function AvailabilityCalendar({ passId, passName, selectedDate, onDateSel
   const { data: availability, isLoading, refetch } = useQuery({
     queryKey: ['availability', passId, monthKey],
     queryFn: () => fetchAvailability(passId, monthKey),
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: 'always',
-    refetchOnReconnect: 'always',
-    refetchInterval: 10000,
-    networkMode: 'always'
+    staleTime: 60000, // Consider data fresh for 1 minute
+    gcTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
+    refetchOnMount: false, // Don't refetch on mount if data is fresh
+    refetchOnWindowFocus: false, // Don't refetch when window gets focus
+    refetchOnReconnect: true, // Do refetch if network reconnects (makes sense)
+    // refetchInterval: 10000, // REMOVED - no automatic polling
+    networkMode: 'online' // Only fetch when online
   })
 
   // Force refetch whenever user interacts with dates
@@ -132,12 +172,6 @@ export function AvailabilityCalendar({ passId, passName, selectedDate, onDateSel
     }
   })
 
-  const handleBooking = (slot: AvailabilitySlot) => {
-    if (!slot.available) return
-    setSelectedSlot(slot)
-    setShowBookingModal(true)
-  }
-
   const confirmBooking = () => {
     if (!selectedSlot) return
     
@@ -147,7 +181,8 @@ export function AvailabilityCalendar({ passId, passName, selectedDate, onDateSel
       passId: selectedSlot.passId,
       digital: selectedSlot.digital,
       physical: selectedSlot.physical,
-      location: '0'
+      location: '0',
+      sessionId: session?.sessionId
     })
   }
 
@@ -354,6 +389,17 @@ export function AvailabilityCalendar({ passId, passName, selectedDate, onDateSel
         message={bookingResult?.message || ''}
         bookingId={bookingResult?.bookingId}
         authUrl={bookingResult?.authUrl}
+      />
+
+      {/* Login Modal - shown when user tries to book without being authenticated */}
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => {
+          setShowLoginModal(false)
+          setSelectedSlot(null) // Clear the selected slot if they cancel login
+        }}
+        onSuccess={handleLoginSuccess}
+        bookingUrl={selectedSlot ? getBookingUrl(selectedSlot.date) : undefined}
       />
     </div>
   )

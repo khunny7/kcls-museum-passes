@@ -56,6 +56,7 @@ export interface BookingRequest {
 export interface BookingResult {
   success: boolean;
   bookingId?: string;
+  message?: string;
   error?: string;
   requiresAuth?: boolean;
   authUrl?: string;
@@ -471,6 +472,7 @@ export class PassesService {
     museumId: string,
     date: string,
     passId: string,
+    sessionId: string,
     digital: boolean = true,
     physical: boolean = false,
     location: string = '0'
@@ -488,19 +490,337 @@ export class PassesService {
         museumId,
         date,
         passId,
+        sessionId,
         digital,
         physical,
         location,
         bookingUrl
       });
 
-      // Return the KCLS booking URL for the user to complete the booking
-      return {
-        success: false,
-        requiresAuth: true,
-        authUrl: bookingUrl,
-        error: 'You will be redirected to KCLS to complete your reservation with your library card.'
-      };
+      // Import browser auth service to get session cookies
+      const { browserSessions } = await import('./auth-browser.js');
+      const session = browserSessions.get(sessionId);
+      
+      if (!session) {
+        console.log('Session not found:', sessionId);
+        return {
+          success: false,
+          requiresAuth: true,
+          error: 'Session expired. Please log in again.'
+        };
+      }
+      
+      if (session.expiresAt < Date.now()) {
+        console.log('Session expired:', sessionId);
+        browserSessions.delete(sessionId);
+        return {
+          success: false,
+          requiresAuth: true,
+          error: 'Session expired. Please log in again.'
+        };
+      }
+      
+      console.log('Found valid session with', session.cookies.length, 'cookies');
+      
+      // Reuse the existing browser context from login instead of creating a new one
+      if (!session.browser || !session.context) {
+        console.log('Session has no browser context');
+        return {
+          success: false,
+          requiresAuth: true,
+          error: 'Session browser context lost. Please log in again.'
+        };
+      }
+      
+      console.log('Reusing existing browser from session');
+      const browser = session.browser;
+      
+      // Reuse the existing page from login if available
+      let page;
+      if (session.page) {
+        console.log('Reusing existing page from login session');
+        page = session.page;
+        
+        // Don't navigate - the login already navigated to the booking page
+        // Just wait a moment for any redirects to complete
+        console.log('Waiting for page to be ready after login...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const currentUrl = page.url();
+        console.log('Current page URL after login:', currentUrl);
+      } else {
+        console.log('No existing page found - this should not happen after fresh login');
+        // Fallback: create a new page if somehow the page wasn't stored
+        page = await session.context.newPage();
+        console.log('Created new page in existing browser context');
+        
+        // Navigate to booking page - cookies should already be set
+        console.log('Navigating to booking page:', bookingUrl);
+        await page.goto(bookingUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+      }
+      
+      const currentUrl = page.url();
+      console.log('Current URL for booking:', currentUrl);
+      
+      // Check if we're at the authorization consent page or booking page with Agree button
+      if (currentUrl.includes('libauth') || currentUrl.includes('/book')) {
+        console.log('On booking page - looking for Agree button or booking form');
+        
+        try {
+          // First, check if we need to click "Agree" button
+          console.log('Searching for Agree button with selector: #terms_accept');
+          const agreeButton = await page.$('#terms_accept');
+          console.log('Agree button found:', !!agreeButton);
+          
+          if (agreeButton) {
+            console.log('Found Agree button (#terms_accept), checking visibility...');
+            
+            // Check if visible and get button info
+            const buttonInfo = await page.evaluate(() => {
+              const btn = document.querySelector('#terms_accept') as HTMLElement;
+              if (!btn) return null;
+              
+              const rect = btn.getBoundingClientRect();
+              const style = window.getComputedStyle(btn);
+              return {
+                visible: rect.width > 0 && rect.height > 0,
+                display: style.display,
+                visibility: style.visibility,
+                tagName: btn.tagName,
+                type: btn.getAttribute('type'),
+                id: btn.id,
+                className: btn.className,
+                text: btn.textContent?.trim()
+              };
+            });
+            
+            console.log('Agree button info:', buttonInfo);
+            
+            // Click using JavaScript click() method which is more reliable
+            console.log('Clicking Agree button using JavaScript click()...');
+            await page.evaluate(() => {
+              const btn = document.querySelector('#terms_accept') as HTMLElement;
+              if (btn) {
+                btn.click();
+              }
+            });
+            console.log('Clicked Agree button successfully');
+            
+            // Wait for the booking form to appear (it's hidden initially)
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            console.log('Waited 3s for booking form to appear');
+            console.log('Current URL after Agree:', page.url());
+          } else {
+            console.log('No Agree button found - form may already be visible');
+          }
+        } catch (error: any) {
+          console.log('Error with Agree button:', error.message);
+        }
+      } else {
+        console.log('Not on libauth or /book page, skipping Agree button check');
+      }
+      
+      // Look for the booking confirmation button
+      try {
+        // Wait for the Reserve button to be visible (it might be in a hidden form initially)
+        console.log('Looking for Reserve button...');
+        
+        const reserveButton = await page.$('#btn-form-submit');
+        if (reserveButton) {
+          // Check if the button is visible
+          const isVisible = await page.evaluate((btn: any) => {
+            const rect = btn.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          }, reserveButton);
+          
+          if (isVisible) {
+            console.log('Found visible Reserve button (#btn-form-submit), clicking it...');
+            await reserveButton.click();
+            console.log('Clicked Reserve button');
+            
+            // Wait for booking to complete
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            const finalUrl = page.url();
+            console.log('Final URL after Reserve:', finalUrl);
+            
+            // Check if booking was successful
+            if (finalUrl.includes('confirmation') || finalUrl.includes('success')) {
+              console.log('Booking appears successful!');
+              return {
+                success: true,
+                bookingId: 'booking_' + Date.now()
+              };
+            }
+            
+            // Check page content for success message
+            const pageContent = await page.content();
+            if (pageContent.includes('reservation') || pageContent.includes('booked') || pageContent.includes('confirmed')) {
+              console.log('Booking confirmed based on page content');
+              return {
+                success: true,
+                bookingId: 'booking_' + Date.now()
+              };
+            }
+          } else {
+            console.log('Reserve button exists but is not visible yet');
+          }
+        } else {
+          console.log('Reserve button (#btn-form-submit) not found');
+        }
+        
+        // Fallback to old logic if specific button not found
+        const bookButtonSelectors = [
+          '#btn-form-submit', // Specific ID for Reserve button
+          'button:has-text("Reserve")',
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'a.btn-primary',
+          'button.btn-primary',
+          'input.btn-primary'
+        ];
+        
+        let buttonFound = false;
+        for (const selector of bookButtonSelectors) {
+          try {
+            await page.waitForSelector(selector, { timeout: 3000 });
+            console.log('Found booking button with selector:', selector);
+            await page.click(selector);
+            console.log('Clicked booking button');
+            buttonFound = true;
+            break;
+          } catch (e) {
+            // Try next selector
+          }
+        }
+        
+        if (!buttonFound) {
+          await page.close();
+          return {
+            success: false,
+            error: 'Could not find booking button'
+          };
+        }
+        
+        // Wait for navigation/page load
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Step 2: Look for and click "Continue" or "Next" or "Navigate" button
+        const continueButtonSelectors = [
+          'button:has-text("Continue")',
+          'button:has-text("Next")',
+          'button:has-text("Navigate")',
+          'input[value="Continue"]',
+          'input[value="Next"]',
+          'a:has-text("Continue")',
+          'a:has-text("Next")',
+          'button[type="submit"]',  // Another submit button
+          '.btn-primary'  // Primary button
+        ];
+        
+        for (const selector of continueButtonSelectors) {
+          try {
+            const element = await page.$(selector);
+            if (element) {
+              console.log('Found continue button with selector:', selector);
+              await element.click();
+              console.log('Clicked continue button');
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              break;
+            }
+          } catch (e) {
+            // Try next selector
+          }
+        }
+        
+        // Step 3: Look for final confirmation button if needed
+        try {
+          const finalButtonSelectors = [
+            'button:has-text("Confirm")',
+            'button:has-text("Complete")',
+            'button:has-text("Finish")',
+            'input[value="Confirm"]',
+            'button[type="submit"]'
+          ];
+          
+          for (const selector of finalButtonSelectors) {
+            try {
+              const element = await page.$(selector);
+              if (element) {
+                console.log('Found final confirmation button with selector:', selector);
+                await element.click();
+                console.log('Clicked final confirmation button');
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                break;
+              }
+            } catch (e) {
+              // Try next selector
+            }
+          }
+        } catch (e) {
+          console.log('No final confirmation button found, might not be needed');
+        }
+        
+        const finalUrl = page.url();
+        console.log('Final URL after booking:', finalUrl);
+        
+        // Check for success indicators
+        const pageContent = await page.content();
+        const success = pageContent.includes('confirmed') || 
+                       pageContent.includes('reserved') || 
+                       pageContent.includes('booked') ||
+                       pageContent.includes('success') ||
+                       pageContent.includes('complete');
+        
+        // Clean up: close page and browser
+        console.log('Closing browser and cleaning up session...');
+        await page.close();
+        if (session.browser) {
+          await session.browser.close();
+          console.log('Browser closed');
+        }
+        
+        // Remove session from storage
+        if (sessionId) {
+          const { browserSessions } = await import('./auth-browser.js');
+          browserSessions.delete(sessionId);
+          console.log('Session cleaned up:', sessionId);
+        }
+        
+        if (success) {
+          return {
+            success: true,
+            message: 'Pass booked successfully!',
+            bookingId: `booking-${Date.now()}`
+          };
+        } else {
+          return {
+            success: false,
+            error: 'Booking may have failed. Please check your reservations.'
+          };
+        }
+      } catch (error: any) {
+        console.error('Error during booking flow:', error);
+        
+        // Clean up on error too
+        try {
+          await page.close();
+          if (session.browser) {
+            await session.browser.close();
+          }
+          if (sessionId) {
+            const { browserSessions } = await import('./auth-browser.js');
+            browserSessions.delete(sessionId);
+          }
+        } catch (cleanupError) {
+          console.error('Error during cleanup:', cleanupError);
+        }
+        
+        return {
+          success: false,
+          error: error.message || 'Failed to complete booking'
+        };
+      }
     } catch (error) {
       console.error(`Error booking pass ${museumId}:`, error);
       return {

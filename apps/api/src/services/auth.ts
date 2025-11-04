@@ -21,6 +21,9 @@ export interface AuthResponse {
   expiresAt: number;
   libraryCard: string;
   token?: string; // Authentication token from redirect URL
+  cookies?: any[]; // Cookies from browser-based auth
+  browser?: any; // Browser instance for reuse
+  context?: any; // Browser context for reuse
   error?: string;
 }
 

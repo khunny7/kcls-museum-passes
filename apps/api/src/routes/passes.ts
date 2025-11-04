@@ -89,16 +89,25 @@ passesRouter.get('/:id/availability', async (req: Request, res: Response) => {
 // POST /api/passes/:id/book - Book a pass
 passesRouter.post('/:id/book', async (req: Request, res: Response) => {
   try {
-    const { date, passId, digital, physical, location } = req.body;
+    const { date, passId, digital, physical, location, sessionId } = req.body;
     
     if (!date || !passId) {
       return res.status(400).json({ error: 'Date and passId are required' });
+    }
+
+    if (!sessionId) {
+      return res.status(401).json({ 
+        success: false,
+        requiresAuth: true,
+        error: 'You must be logged in to book a pass' 
+      });
     }
 
     const booking = await passesService.bookPass(
       req.params.id,
       date,
       passId,
+      sessionId,
       digital,
       physical,
       location

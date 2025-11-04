@@ -17,7 +17,7 @@ router.post('/login', async (req: Request, res: Response) => {
   console.log('[AUTH ROUTE] USE_BROWSER_AUTH =', USE_BROWSER_AUTH);
   
   try {
-    const { libraryCard, pin }: AuthCredentials = req.body;
+    const { libraryCard, pin, bookingUrl }: AuthCredentials & { bookingUrl?: string } = req.body;
 
     if (!libraryCard || !pin) {
       console.log('[AUTH ROUTE] Validation failed: missing credentials');
@@ -29,16 +29,40 @@ router.post('/login', async (req: Request, res: Response) => {
 
     console.log('[AUTH ROUTE] Credentials validated');
     console.log('[AUTH ROUTE] Library card:', libraryCard);
+    console.log('[AUTH ROUTE] Booking URL:', bookingUrl || '(using default)');
 
     // Use browser-based auth if enabled, otherwise use direct HTTP
     let result: AuthResponse;
     if (USE_BROWSER_AUTH) {
       console.log('[AUTH ROUTE] Using browser-based auth (Puppeteer)');
-      // Dynamic import to avoid blocking tsx
-      const { browserAuthService } = await import('../services/auth-browser.js');
-      console.log('[AUTH ROUTE] Calling browserAuthService.login()...');
-      result = await browserAuthService.login({ libraryCard, pin });
-      console.log('[AUTH ROUTE] browserAuthService.login() returned:', result);
+      console.log('[AUTH ROUTE] BEFORE dynamic import...');
+      try {
+        // Dynamic import to avoid blocking tsx
+        console.log('[AUTH ROUTE] STARTING dynamic import...');
+        const { browserAuthService, browserSessions } = await import('../services/auth-browser.js');
+        console.log('[AUTH ROUTE] AFTER dynamic import - imported successfully');
+        console.log('[AUTH ROUTE] browserAuthService type:', typeof browserAuthService);
+        console.log('[AUTH ROUTE] Calling browserAuthService.login()...');
+        result = await browserAuthService.login({ libraryCard, pin, bookingUrl });
+        console.log('[AUTH ROUTE] browserAuthService.login() returned:', result);
+        
+        // Store session with cookies if login was successful
+        if (result.success && result.cookies) {
+          browserSessions.set(result.sessionId, {
+            sessionId: result.sessionId,
+            cookies: result.cookies,
+            expiresAt: result.expiresAt,
+            libraryCard: result.libraryCard,
+            browser: result.browser,
+            context: result.context,
+            page: result.page, // Store the page for reuse in booking
+          });
+          console.log('[AUTH ROUTE] Stored browser session:', result.sessionId);
+        }
+      } catch (importError) {
+        console.error('[AUTH ROUTE] Error during browser auth:', importError);
+        throw importError;
+      }
     } else {
       console.log('[AUTH ROUTE] Using direct HTTP auth');
       result = await authService.login({ libraryCard, pin });
@@ -50,7 +74,11 @@ router.post('/login', async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('[AUTH ROUTE] ========================================');
+    console.error('[AUTH ROUTE] Login error caught:', error);
+    console.error('[AUTH ROUTE] Error message:', error?.message);
+    console.error('[AUTH ROUTE] Error stack:', error?.stack);
+    console.error('[AUTH ROUTE] ========================================');
     res.status(500).json({
       success: false,
       error: 'Internal server error',

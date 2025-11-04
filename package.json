@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix apps/api\" \"npm run dev --prefix apps/web\"",
+    "dev": "npm run build:api && concurrently \"node apps/api/dist/index.js\" \"npm run dev --prefix apps/web\"",
+    "dev:watch": "concurrently \"npm run dev --prefix apps/api\" \"npm run dev --prefix apps/web\"",
     "dev:compiled": "npm run build:api && concurrently \"node apps/api/dist/index.js\" \"npm run dev --prefix apps/web\"",
     "dev:api": "npm run dev --prefix apps/api",
     "dev:web": "npm run dev --prefix apps/web",

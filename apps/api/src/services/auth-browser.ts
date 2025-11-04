@@ -3,6 +3,7 @@ import puppeteer from 'puppeteer';
 interface LoginCredentials {
   libraryCard: string;
   pin: string;
+  bookingUrl?: string; // Optional: specific booking page to authenticate for
 }
 
 interface AuthResult {
@@ -11,6 +12,9 @@ interface AuthResult {
   expiresAt: number;
   libraryCard: string;
   cookies?: any[];
+  browser?: any;
+  context?: any;
+  page?: any; // The page used for authentication, can be reused for booking
   error?: string;
 }
 
@@ -30,16 +34,24 @@ export class BrowserAuthService {
       console.log('[BrowserAuth.initialize] No existing browser, launching new one...');
       console.log('[BrowserAuth.initialize] Calling puppeteer.launch()...');
       const start = Date.now();
-      this.browser = await puppeteer.launch({
-        headless: false, // Set to false to see the browser window and debug
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-blink-features=AutomationControlled', // Hide automation
-        ],
-      });
-      const elapsed = Date.now() - start;
-      console.log(`[BrowserAuth.initialize] Browser launched successfully in ${elapsed}ms`);
+      try {
+        this.browser = await Promise.race([
+          puppeteer.launch({
+            headless: false, // Set to false to see the browser window and debug
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-blink-features=AutomationControlled', // Hide automation
+            ],
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Browser launch timeout after 30s')), 30000))
+        ]);
+        const elapsed = Date.now() - start;
+        console.log(`[BrowserAuth.initialize] Browser launched successfully in ${elapsed}ms`);
+      } catch (error: any) {
+        console.error('[BrowserAuth.initialize] Failed to launch browser:', error.message);
+        throw new Error(`Failed to launch browser: ${error.message}`);
+      }
     } else {
       console.log('[BrowserAuth.initialize] Browser already exists, reusing');
     }
@@ -54,8 +66,12 @@ export class BrowserAuthService {
 
   async login(credentials: LoginCredentials): Promise<AuthResult> {
     console.log('[BrowserAuth.login] === BROWSER AUTH START ===');
-    console.log('[BrowserAuth.login] Credentials:', { libraryCard: credentials.libraryCard, pin: '****' });
+    console.log('[BrowserAuth.login] Credentials:', { libraryCard: credentials.libraryCard, pin: '****', hasBookingUrl: !!credentials.bookingUrl });
     console.log('[BrowserAuth.login] About to enter try block...');
+    
+    // Use provided booking URL or fallback to default
+    const bookingPageUrl = credentials.bookingUrl || this.BOOKING_PAGE;
+    console.log('[BrowserAuth.login] Using booking page:', bookingPageUrl);
     
     try {
       console.log('[BrowserAuth.login] Inside try block');
@@ -86,8 +102,8 @@ export class BrowserAuthService {
 
       // CRITICAL: Start from booking page, not auth URL directly!
       // Server checks referer chain - must come from rooms.kcls.org booking flow
-      console.log('[BrowserAuth.login] Navigating to booking page first:', this.BOOKING_PAGE);
-      await page.goto(this.BOOKING_PAGE, { waitUntil: 'networkidle0', timeout: 30000 });
+      console.log('[BrowserAuth.login] Navigating to booking page first:', bookingPageUrl);
+      await page.goto(bookingPageUrl, { waitUntil: 'networkidle0', timeout: 30000 });
       console.log('[BrowserAuth.login] Booking page loaded - should auto-redirect to login');
       
       // Wait a moment for any redirects
@@ -196,13 +212,15 @@ export class BrowserAuthService {
         const token = urlParams.get('token');
         console.log('Token from URL:', token ? token.substring(0, 20) + '...' : 'none');
 
-        // Get all cookies
-        const cookies = await page.cookies();
-        console.log('Cookies obtained:', cookies.length);
-        console.log('Cookie domains:', [...new Set(cookies.map(c => c.domain))]);
+        // Get ALL cookies including HttpOnly using CDP
+        const client = await page.target().createCDPSession();
+        const allCookies = (await client.send('Network.getAllCookies' as any) as any).cookies;
+        console.log('Cookies obtained (via CDP):', allCookies.length);
+        console.log('Cookie domains:', [...new Set(allCookies.map((c: any) => c.domain))]);
 
-        await page.close();
-        console.log('Page closed');
+        // DON'T close the page or browser - keep them alive for booking!
+        // await page.close();
+        console.log('Keeping browser and page open for future bookings');
 
         // Generate session ID
         const sessionId = Math.random().toString(36).substring(7);
@@ -217,7 +235,10 @@ export class BrowserAuthService {
           sessionId,
           expiresAt,
           libraryCard: credentials.libraryCard,
-          cookies,
+          cookies: allCookies,
+          browser: this.browser,
+          context: page.browserContext(),
+          page: page, // Return the page so it can be reused for booking
         };
       } else {
         console.log('Login failed - unexpected URL:', finalUrl);
@@ -288,5 +309,18 @@ export class BrowserAuthService {
     }
   }
 }
+
+// Session storage for browser auth cookies
+export interface BrowserAuthSession {
+  sessionId: string;
+  cookies: any[];
+  expiresAt: number;
+  libraryCard: string;
+  browser: any; // Keep the browser instance alive
+  context: any; // Browser context with cookies
+  page?: any; // The page used during login, can be reused for booking
+}
+
+export const browserSessions = new Map<string, BrowserAuthSession>();
 
 export const browserAuthService = new BrowserAuthService();

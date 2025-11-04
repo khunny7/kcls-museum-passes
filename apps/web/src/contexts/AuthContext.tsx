@@ -10,7 +10,7 @@ interface AuthSession {
 interface AuthContextType {
   isAuthenticated: boolean;
   session: AuthSession | null;
-  login: (libraryCard: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  login: (libraryCard: string, pin: string, bookingUrl?: string) => Promise<{ success: boolean; error?: string; sessionId?: string }>;
   logout: () => void;
   loading: boolean;
 }
@@ -72,11 +72,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => clearTimeout(timer);
   }, [session]);
 
-  const login = async (libraryCard: string, pin: string) => {
+  const login = async (libraryCard: string, pin: string, bookingUrl?: string) => {
     try {
       const response = await axios.post('/api/auth/login', {
         libraryCard,
         pin,
+        bookingUrl,
       });
 
       if (response.data.success) {
@@ -89,7 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setSession(newSession);
         localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(newSession));
 
-        return { success: true };
+        return { success: true, sessionId: response.data.sessionId };
       } else {
         return {
           success: false,

@@ -4,9 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
+  bookingUrl?: string;
+  onSuccess?: (sessionId: string) => void;
 }
 
-export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+export default function LoginModal({ isOpen, onClose, bookingUrl, onSuccess }: LoginModalProps) {
   const { login } = useAuth();
   const [libraryCard, setLibraryCard] = useState('');
   const [pin, setPin] = useState('');
@@ -27,12 +29,19 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setLoading(true);
 
     try {
-      const result = await login(libraryCard.trim(), pin.trim());
+      const result = await login(libraryCard.trim(), pin.trim(), bookingUrl);
 
       if (result.success) {
         setLibraryCard('');
         setPin('');
-        onClose();
+        
+        // If there's a success callback, let it handle the modal state
+        // Otherwise, close the modal
+        if (onSuccess && result.sessionId) {
+          onSuccess(result.sessionId); // Call the success callback with sessionId
+        } else {
+          onClose();
+        }
       } else {
         setError(result.error || 'Invalid library card or PIN');
       }
