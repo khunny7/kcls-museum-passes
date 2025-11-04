@@ -35,10 +35,16 @@ class SchedulerService {
 
   constructor() {
     this.passesService = new PassesService();
-    // Use a consistent path relative to the project root
-    // This will be apps/api/logs regardless of how the code is run
-    const projectRoot = path.join(__dirname, '../..');
-    this.logsDir = path.join(projectRoot, 'logs');
+    
+    // Determine the logs directory
+    // When running compiled: __dirname is apps/api/dist, so go up one level to apps/api
+    // When running with tsx: __dirname is apps/api/src, so go up one level to apps/api
+    // Then add 'logs' to get apps/api/logs
+    const apiRoot = __dirname.includes('dist') 
+      ? path.join(__dirname, '..') // From dist -> api
+      : path.join(__dirname, '..'); // From src -> api
+    
+    this.logsDir = path.join(apiRoot, 'logs');
     
     // Create logs directory if it doesn't exist
     if (!fs.existsSync(this.logsDir)) {
