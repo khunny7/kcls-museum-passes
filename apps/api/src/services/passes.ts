@@ -541,11 +541,11 @@ export class PassesService {
         console.log('Reusing existing page from login session');
         page = session.page;
         
-        // Poll for page to be ready (check every 100ms, max 1s)
+        // Poll for page to be ready (check every 100ms, max 5s for busy servers)
         console.log('Waiting for page to be ready after login...');
         const startTime = Date.now();
         let ready = false;
-        while (!ready && Date.now() - startTime < 1000) {
+        while (!ready && Date.now() - startTime < 5000) {
           try {
             // Check if page is ready by trying to get URL
             const url = page.url();
@@ -616,10 +616,10 @@ export class PassesService {
             });
             console.log('Clicked Agree button successfully');
             
-            // Poll for booking form to appear (check every 100ms, max 3s)
+            // Poll for booking form to appear (check every 100ms, max 10s for busy servers)
             const formWaitStart = Date.now();
             let formVisible = false;
-            while (!formVisible && Date.now() - formWaitStart < 3000) {
+            while (!formVisible && Date.now() - formWaitStart < 10000) {
               try {
                 const submitBtn = await page.$('#btn-form-submit');
                 if (submitBtn) {
@@ -665,10 +665,10 @@ export class PassesService {
             await reserveButton.click();
             console.log('Clicked Reserve button');
             
-            // Poll for booking completion (check every 100ms, max 5s)
+            // Poll for booking completion (check every 100ms, max 15s for busy servers)
             const completionStart = Date.now();
             let completed = false;
-            while (!completed && Date.now() - completionStart < 5000) {
+            while (!completed && Date.now() - completionStart < 15000) {
               const currentUrl = page.url();
               if (currentUrl.includes('confirmation') || currentUrl.includes('success')) {
                 completed = true;
@@ -747,10 +747,10 @@ export class PassesService {
           };
         }
         
-        // Poll for page to load after button click (check every 100ms, max 2s)
+        // Poll for page to load after button click (check every 100ms, max 10s for busy servers)
         const navStart = Date.now();
         await new Promise(resolve => setTimeout(resolve, 100));
-        while (Date.now() - navStart < 2000) {
+        while (Date.now() - navStart < 10000) {
           try {
             const state = await page.evaluate(() => document.readyState);
             if (state === 'complete') break;
@@ -808,9 +808,9 @@ export class PassesService {
                 const confirmStart = Date.now();
                 await element.click();
                 console.log('Clicked final confirmation button');
-                // Poll for confirmation to complete (check every 100ms, max 3s)
+                // Poll for confirmation to complete (check every 100ms, max 10s for busy servers)
                 let confirmed = false;
-                while (!confirmed && Date.now() - confirmStart < 3000) {
+                while (!confirmed && Date.now() - confirmStart < 10000) {
                   const url = page.url();
                   if (url.includes('confirmation') || url.includes('success') || url.includes('complete')) {
                     confirmed = true;
