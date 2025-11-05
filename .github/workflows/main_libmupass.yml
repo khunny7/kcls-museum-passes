@@ -55,6 +55,16 @@ jobs:
           cp apps/api/package.json "${DEPLOY_DIR}/apps/api/"
           cp apps/api/tsconfig.json "${DEPLOY_DIR}/apps/api/"
           
+          # Create logs directory (will be populated at runtime)
+          mkdir -p "${DEPLOY_DIR}/apps/api/logs"
+          echo "Logs directory for scheduler bookings" > "${DEPLOY_DIR}/apps/api/logs/.gitkeep"
+          
+          # Copy museums data if it exists
+          if [ -f apps/api/src/data/museums.json ]; then
+            mkdir -p "${DEPLOY_DIR}/apps/api/src/data"
+            cp apps/api/src/data/museums.json "${DEPLOY_DIR}/apps/api/src/data/"
+          fi
+          
           # Copy built web assets into API's public folder so it can serve them
           mkdir -p "${DEPLOY_DIR}/apps/api/public"
           if [ -d apps/web/dist ]; then

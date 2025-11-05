@@ -37,6 +37,10 @@ class SchedulerService {
   constructor() {
     this.passesService = new PassesService();
     
+    console.log('🔧 Initializing Scheduler Service...');
+    console.log('   __dirname:', __dirname);
+    console.log('   __filename:', __filename);
+    
     // Determine the logs directory
     // When running compiled: __dirname is apps/api/dist, so go up one level to apps/api
     // When running with tsx: __dirname is apps/api/src, so go up one level to apps/api
@@ -47,9 +51,16 @@ class SchedulerService {
     
     this.logsDir = path.join(apiRoot, 'logs');
     
+    console.log('   API root:', apiRoot);
+    console.log('   Logs directory will be:', this.logsDir);
+    
     // Create logs directory if it doesn't exist
     if (!fs.existsSync(this.logsDir)) {
+      console.log('   Creating logs directory...');
       fs.mkdirSync(this.logsDir, { recursive: true });
+      console.log('   ✅ Logs directory created');
+    } else {
+      console.log('   ✅ Logs directory exists');
     }
 
     console.log(`📁 Scheduler logs directory: ${this.logsDir}`);
@@ -349,15 +360,36 @@ class SchedulerService {
     const bookingsFile = path.join(this.logsDir, 'scheduled_bookings.json');
     const bookings = Array.from(this.scheduledBookings.values());
     
-    // Convert dates to ISO strings for JSON serialization
-    const serializable = bookings.map(b => ({
-      ...b,
-      scheduledFor: b.scheduledFor.toISOString(),
-      createdAt: b.createdAt.toISOString(),
-      executedAt: b.executedAt?.toISOString()
-    }));
+    try {
+      // Ensure directory exists before writing
+      if (!fs.existsSync(this.logsDir)) {
+        console.log(`Creating logs directory: ${this.logsDir}`);
+        fs.mkdirSync(this.logsDir, { recursive: true });
+      }
+      
+      // Convert dates to ISO strings for JSON serialization
+      const serializable = bookings.map(b => ({
+        ...b,
+        scheduledFor: b.scheduledFor.toISOString(),
+        createdAt: b.createdAt.toISOString(),
+        executedAt: b.executedAt?.toISOString(),
+        cancelledAt: b.cancelledAt?.toISOString()
+      }));
 
-    fs.writeFileSync(bookingsFile, JSON.stringify(serializable, null, 2));
+      fs.writeFileSync(bookingsFile, JSON.stringify(serializable, null, 2));
+      console.log(`💾 Saved ${bookings.length} bookings to disk`);
+    } catch (error) {
+      console.error('❌ Error saving scheduled bookings:', error);
+      console.error('   Logs directory:', this.logsDir);
+      console.error('   Bookings file:', bookingsFile);
+      
+      // Try to provide helpful error message
+      if ((error as any).code === 'EACCES') {
+        console.error('   ⚠️  Permission denied - directory may be read-only');
+      } else if ((error as any).code === 'ENOENT') {
+        console.error('   ⚠️  Directory does not exist and could not be created');
+      }
+    }
   }
 
   private loadScheduledBookings() {
