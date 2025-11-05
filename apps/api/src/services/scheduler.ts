@@ -1,5 +1,6 @@
 import schedule from 'node-schedule';
 import { PassesService } from './passes.js';
+import { browserAuthService } from './auth-browser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -199,23 +200,18 @@ class SchedulerService {
     this.saveScheduledBookings();
 
     try {
-      // First, login with credentials
+      // First, login with credentials using the browser auth service directly
       this.log(bookingId, 'Logging in...');
       const bookingUrl = `https://rooms.kcls.org/passes/${booking.museumId}/book?digital=${booking.digital}&physical=${booking.physical}&location=${booking.location}&date=${booking.date}`;
       
-      const loginResponse = await fetch('http://localhost:4000/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          libraryCard: booking.credentials.libraryCard,
-          pin: booking.credentials.pin,
-          bookingUrl: bookingUrl
-        }),
+      this.log(bookingId, `Booking URL: ${bookingUrl}`);
+      this.log(bookingId, `Library Card: ${booking.credentials.libraryCard}`);
+      
+      const loginResult = await browserAuthService.login({
+        libraryCard: booking.credentials.libraryCard,
+        pin: booking.credentials.pin,
+        bookingUrl: bookingUrl
       });
-
-      const loginResult: any = await loginResponse.json();
 
       if (!loginResult.success) {
         throw new Error(`Login failed: ${loginResult.error}`);
@@ -223,13 +219,13 @@ class SchedulerService {
 
       this.log(bookingId, `Login successful, sessionId: ${loginResult.sessionId}`);
 
-      // Now book the pass
+      // Now book the pass using the passes service directly
       this.log(bookingId, 'Attempting to book pass...');
       const result = await this.passesService.bookPass(
         booking.museumId,
         booking.date,
         booking.passId,
-        loginResult.sessionId,
+        loginResult.sessionId!,
         booking.digital,
         booking.physical,
         booking.location
@@ -250,6 +246,7 @@ class SchedulerService {
       booking.status = 'failed';
       booking.result = { error: error.message };
       this.log(bookingId, `=== BOOKING ERROR: ${error.message} ===`);
+      this.log(bookingId, `Stack trace: ${error.stack}`);
       console.error(`Error executing booking ${bookingId}:`, error);
     }
 
