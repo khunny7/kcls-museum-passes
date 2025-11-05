@@ -542,9 +542,9 @@ export class PassesService {
         page = session.page;
         
         // Don't navigate - the login already navigated to the booking page
-        // Just wait a moment for any redirects to complete
+        // Just wait a moment for any redirects to complete (reduced for speed)
         console.log('Waiting for page to be ready after login...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         const currentUrl = page.url();
         console.log('Current page URL after login:', currentUrl);
@@ -606,9 +606,9 @@ export class PassesService {
             });
             console.log('Clicked Agree button successfully');
             
-            // Wait for the booking form to appear (it's hidden initially)
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            console.log('Waited 3s for booking form to appear');
+            // Wait for the booking form to appear (reduced for speed)
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('Waited 1s for booking form to appear');
             console.log('Current URL after Agree:', page.url());
           } else {
             console.log('No Agree button found - form may already be visible');
@@ -638,8 +638,8 @@ export class PassesService {
             await reserveButton.click();
             console.log('Clicked Reserve button');
             
-            // Wait for booking to complete
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Wait for booking to complete (reduced for speed)
+            await new Promise(resolve => setTimeout(resolve, 1500));
             
             const finalUrl = page.url();
             console.log('Final URL after Reserve:', finalUrl);
@@ -702,8 +702,8 @@ export class PassesService {
           };
         }
         
-        // Wait for navigation/page load
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for navigation/page load (reduced for speed)
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Step 2: Look for and click "Continue" or "Next" or "Navigate" button
         const continueButtonSelectors = [
@@ -725,7 +725,7 @@ export class PassesService {
               console.log('Found continue button with selector:', selector);
               await element.click();
               console.log('Clicked continue button');
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              await new Promise(resolve => setTimeout(resolve, 500));
               break;
             }
           } catch (e) {
@@ -750,7 +750,7 @@ export class PassesService {
                 console.log('Found final confirmation button with selector:', selector);
                 await element.click();
                 console.log('Clicked final confirmation button');
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                await new Promise(resolve => setTimeout(resolve, 1500));
                 break;
               }
             } catch (e) {

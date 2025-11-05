@@ -79,25 +79,24 @@ class SchedulerService {
     // Parse the booking date (YYYY-MM-DD)
     const [year, month, day] = bookingDate.split('-').map(Number);
     
-    // Bookings open 14 days before at 2pm PST
+    // Bookings open 14 days before at 2pm PST SHARP
     // Calculate the date 14 days before
     const targetDate = new Date(year, month - 1, day);
     targetDate.setDate(targetDate.getDate() - 14);
     
-    // We want 2pm PST on that date
+    // We want EXACTLY 2pm PST (14:00:00.000 PST) on that date
     // PST is UTC-8 (Pacific Standard Time, winter)
     // PDT is UTC-7 (Pacific Daylight Time, summer)
     // For now, we'll use PST (UTC-8)
     
-    // Create the date in PST: 2pm PST = 2pm local time in America/Los_Angeles
-    // Then convert to UTC by adding 8 hours
-    // 2pm PST = 10pm UTC (22:00 UTC)
+    // 2pm PST = 10pm UTC (22:00:00.000 UTC)
+    // Using Date.UTC ensures we get the exact millisecond
     
     const pstYear = targetDate.getFullYear();
     const pstMonth = targetDate.getMonth();
     const pstDay = targetDate.getDate();
     
-    // Create UTC date for 2pm PST (which is 10pm UTC)
+    // Create UTC date for EXACTLY 2pm PST (22:00:00.000 UTC)
     const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, 22, 0, 0, 0));
     
     return utcDate;
@@ -155,16 +154,21 @@ class SchedulerService {
       this.log(booking.id, 'Scheduled time has passed, executing immediately');
       this.executeBooking(booking.id);
     } else {
-      // Schedule for future execution
-      this.log(booking.id, `Scheduling job for ${booking.scheduledFor.toISOString()}`);
+      // Schedule for future execution at EXACT time
+      const scheduleTimeISO = booking.scheduledFor.toISOString();
+      const scheduleTimeMs = booking.scheduledFor.getTime();
+      this.log(booking.id, `Scheduling job for EXACT time: ${scheduleTimeISO} (${scheduleTimeMs}ms)`);
       
+      // node-schedule will fire at the exact Date object time
       const job = schedule.scheduleJob(booking.scheduledFor, () => {
+        const actualExecutionTime = new Date().toISOString();
+        this.log(booking.id, `Job fired at: ${actualExecutionTime}`);
         this.executeBooking(booking.id);
       });
 
       if (job) {
         this.jobs.set(booking.id, job);
-        this.log(booking.id, 'Job scheduled successfully');
+        this.log(booking.id, 'Job scheduled successfully - will fire at exact millisecond');
       } else {
         this.log(booking.id, 'ERROR: Failed to schedule job');
       }

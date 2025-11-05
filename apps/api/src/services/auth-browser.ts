@@ -108,8 +108,8 @@ export class BrowserAuthService {
       await page.goto(bookingPageUrl, { waitUntil: 'networkidle0', timeout: 30000 });
       console.log('[BrowserAuth.login] Booking page loaded - should auto-redirect to login');
       
-      // Wait a moment for any redirects
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait a moment for any redirects (reduced for speed)
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       const currentUrl = page.url();
       console.log('[BrowserAuth.login] Current URL after booking page:', currentUrl);
