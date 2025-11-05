@@ -157,4 +157,5 @@ jobs:
           app-name: 'libmupass'
           slot-name: 'Production'
           package: .
+          startup-command: 'cd apps/api && node dist/index.js'
           
