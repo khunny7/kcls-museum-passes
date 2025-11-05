@@ -81,6 +81,16 @@ jobs:
           cp startup.sh "${DEPLOY_DIR}/"
           chmod +x "${DEPLOY_DIR}/startup.sh"
           
+          # Copy pre-installed node_modules to avoid slow Azure npm install
+          # This significantly reduces deployment time
+          echo "Copying node_modules to deployment package..."
+          if [ -d node_modules ]; then
+            cp -R node_modules "${DEPLOY_DIR}/"
+          fi
+          if [ -d apps/api/node_modules ]; then
+            cp -R apps/api/node_modules "${DEPLOY_DIR}/apps/api/"
+          fi
+          
           # Create a web.config for Azure if it doesn't exist
           if [ ! -f "${DEPLOY_DIR}/web.config" ]; then
             cat > "${DEPLOY_DIR}/web.config" << 'EOF'

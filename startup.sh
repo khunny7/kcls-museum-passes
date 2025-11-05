@@ -14,7 +14,7 @@ if [ ! -d "node_modules" ]; then
   echo "Installing root dependencies..."
   npm ci --omit=dev || echo "Warning: Root dependencies installation had issues"
 else
-  echo "Root node_modules already exists"
+  echo "Root node_modules already exists (bundled in deployment - skipping install)"
 fi
 
 # Install API dependencies
@@ -25,7 +25,7 @@ if [ ! -d "node_modules" ]; then
   npm ci --omit=dev
   echo "API dependencies installed successfully"
 else
-  echo "API node_modules already exists"
+  echo "API node_modules already exists (bundled in deployment - skipping install)"
 fi
 
 echo "API directory contents:"
