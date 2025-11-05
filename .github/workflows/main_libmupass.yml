@@ -53,6 +53,7 @@ jobs:
           cp -R apps/api/dist "${DEPLOY_DIR}/apps/api/"
           cp -R apps/api/src "${DEPLOY_DIR}/apps/api/"
           cp apps/api/package.json "${DEPLOY_DIR}/apps/api/"
+          cp apps/api/package-lock.json "${DEPLOY_DIR}/apps/api/"
           cp apps/api/tsconfig.json "${DEPLOY_DIR}/apps/api/"
           
           # Create logs directory (will be populated at runtime)
@@ -157,5 +158,5 @@ jobs:
           app-name: 'libmupass'
           slot-name: 'Production'
           package: .
-          startup-command: 'cd apps/api && node dist/index.js'
+          startup-command: 'npm ci --omit=dev --prefix apps/api && cd apps/api && node dist/index.js'
           
