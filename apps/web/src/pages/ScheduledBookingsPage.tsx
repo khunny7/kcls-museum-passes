@@ -8,9 +8,10 @@ interface ScheduledBooking {
   date: string
   passId: string
   scheduledFor: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   createdAt: string
   executedAt?: string
+  cancelledAt?: string
   result?: any
   hasCredentials: boolean
   libraryCard?: string | null
@@ -82,6 +83,15 @@ async function cancelBooking(id: string): Promise<void> {
   }
 }
 
+async function deleteBooking(id: string): Promise<void> {
+  const response = await fetch(`/api/scheduler/bookings/${id}/remove`, {
+    method: 'DELETE'
+  })
+  if (!response.ok) {
+    throw new Error('Failed to delete booking')
+  }
+}
+
 export function ScheduledBookingsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -129,6 +139,13 @@ export function ScheduledBookingsPage() {
     }
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteBooking,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduledBookings'] })
+    }
+  })
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
@@ -139,6 +156,8 @@ export function ScheduledBookingsPage() {
         return 'bg-green-100 text-green-800 border-green-200'
       case 'failed':
         return 'bg-red-100 text-red-800 border-red-200'
+      case 'cancelled':
+        return 'bg-gray-100 text-gray-800 border-gray-200'
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200'
     }
@@ -386,6 +405,19 @@ export function ScheduledBookingsPage() {
                           </p>
                         </div>
                       )}
+                      {booking.cancelledAt && (
+                        <div>
+                          <span className="text-gray-500">Cancelled:</span>
+                          <p className="font-medium text-gray-900">
+                            {new Date(booking.cancelledAt).toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      )}
                       {booking.result && (
                         <div className="col-span-2">
                           <span className="text-gray-500">Result:</span>
@@ -421,6 +453,22 @@ export function ScheduledBookingsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                         Cancel
+                      </button>
+                    )}
+                    {(booking.status === 'completed' || booking.status === 'failed' || booking.status === 'cancelled') && (
+                      <button
+                        onClick={() => {
+                          if (confirm('Are you sure you want to delete this booking from history? This cannot be undone.')) {
+                            deleteMutation.mutate(booking.id)
+                          }
+                        }}
+                        disabled={deleteMutation.isPending}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm font-medium disabled:opacity-50"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Delete
                       </button>
                     )}
                   </div>

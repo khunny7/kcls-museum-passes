@@ -167,6 +167,31 @@ schedulerRouter.delete('/bookings/:id', (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/scheduler/bookings/:id/remove - Delete a completed/failed booking from history
+schedulerRouter.delete('/bookings/:id/remove', (req: Request, res: Response) => {
+  try {
+    const deleted = schedulerService.deleteBooking(req.params.id);
+
+    if (!deleted) {
+      return res.status(400).json({
+        success: false,
+        error: 'Booking cannot be deleted (not found or still pending/running)'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Booking deleted successfully'
+    });
+  } catch (error: any) {
+    console.error('Error deleting booking:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete booking'
+    });
+  }
+});
+
 // GET /api/scheduler/jobs - Get all active scheduled jobs (cron jobs)
 schedulerRouter.get('/jobs', (req: Request, res: Response) => {
   try {

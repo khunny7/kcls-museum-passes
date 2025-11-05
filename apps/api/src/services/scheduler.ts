@@ -20,9 +20,10 @@ export interface ScheduledBooking {
   physical: boolean;
   location: string;
   scheduledFor: Date; // When to execute the booking (2pm PST on date - 14 days)
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   createdAt: Date;
   executedAt?: Date;
+  cancelledAt?: Date;
   result?: any;
   logs: string[];
 }
@@ -284,10 +285,39 @@ class SchedulerService {
       this.jobs.delete(id);
     }
 
-    this.scheduledBookings.delete(id);
+    // Update booking status to cancelled instead of deleting
+    booking.status = 'cancelled';
+    booking.cancelledAt = new Date();
+    booking.logs.push(`Cancelled by user at ${new Date().toISOString()}`);
+    
+    this.scheduledBookings.set(id, booking);
     this.saveScheduledBookings();
     this.log(id, 'Booking cancelled');
 
+    return true;
+  }
+
+  deleteBooking(id: string): boolean {
+    const booking = this.scheduledBookings.get(id);
+    if (!booking) {
+      return false;
+    }
+
+    // Only allow deleting completed, failed, or cancelled bookings
+    if (booking.status === 'pending' || booking.status === 'running') {
+      return false;
+    }
+
+    this.scheduledBookings.delete(id);
+    this.saveScheduledBookings();
+    
+    // Also delete the log file if it exists
+    const logFile = path.join(this.logsDir, `${id}.log`);
+    if (fs.existsSync(logFile)) {
+      fs.unlinkSync(logFile);
+    }
+
+    console.log(`Deleted booking ${id} with status ${booking.status}`);
     return true;
   }
 
