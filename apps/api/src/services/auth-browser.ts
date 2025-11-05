@@ -108,11 +108,14 @@ export class BrowserAuthService {
       await page.goto(bookingPageUrl, { waitUntil: 'networkidle0', timeout: 30000 });
       console.log('[BrowserAuth.login] Booking page loaded - should auto-redirect to login');
       
-      // Wait a moment for any redirects (reduced for speed)
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const currentUrl = page.url();
-      console.log('[BrowserAuth.login] Current URL after booking page:', currentUrl);
+      // Poll for redirect to complete (check every 100ms, max 2s)
+      const startTime = Date.now();
+      let currentUrl = page.url();
+      while (!currentUrl.includes('libauth') && Date.now() - startTime < 2000) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        currentUrl = page.url();
+      }
+      console.log('[BrowserAuth.login] Current URL after booking page:', currentUrl, `(waited ${Date.now() - startTime}ms)`);
       
       // If not redirected to auth page, click the login button/link
       if (!currentUrl.includes('libauth')) {

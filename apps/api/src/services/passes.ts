@@ -541,10 +541,20 @@ export class PassesService {
         console.log('Reusing existing page from login session');
         page = session.page;
         
-        // Don't navigate - the login already navigated to the booking page
-        // Just wait a moment for any redirects to complete (reduced for speed)
+        // Poll for page to be ready (check every 100ms, max 1s)
         console.log('Waiting for page to be ready after login...');
-        await new Promise(resolve => setTimeout(resolve, 300));
+        const startTime = Date.now();
+        let ready = false;
+        while (!ready && Date.now() - startTime < 1000) {
+          try {
+            // Check if page is ready by trying to get URL
+            const url = page.url();
+            if (url) ready = true;
+          } catch {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
+        console.log(`Page ready after ${Date.now() - startTime}ms`);
         
         const currentUrl = page.url();
         console.log('Current page URL after login:', currentUrl);
@@ -606,9 +616,26 @@ export class PassesService {
             });
             console.log('Clicked Agree button successfully');
             
-            // Wait for the booking form to appear (reduced for speed)
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            console.log('Waited 1s for booking form to appear');
+            // Poll for booking form to appear (check every 100ms, max 3s)
+            const formWaitStart = Date.now();
+            let formVisible = false;
+            while (!formVisible && Date.now() - formWaitStart < 3000) {
+              try {
+                const submitBtn = await page.$('#btn-form-submit');
+                if (submitBtn) {
+                  const visible = await page.evaluate((btn: any) => {
+                    const rect = btn.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                  }, submitBtn);
+                  if (visible) {
+                    formVisible = true;
+                    break;
+                  }
+                }
+              } catch {}
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            console.log(`Booking form ready after ${Date.now() - formWaitStart}ms`);
             console.log('Current URL after Agree:', page.url());
           } else {
             console.log('No Agree button found - form may already be visible');
@@ -638,8 +665,26 @@ export class PassesService {
             await reserveButton.click();
             console.log('Clicked Reserve button');
             
-            // Wait for booking to complete (reduced for speed)
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // Poll for booking completion (check every 100ms, max 5s)
+            const completionStart = Date.now();
+            let completed = false;
+            while (!completed && Date.now() - completionStart < 5000) {
+              const currentUrl = page.url();
+              if (currentUrl.includes('confirmation') || currentUrl.includes('success')) {
+                completed = true;
+                break;
+              }
+              // Also check page content
+              try {
+                const pageContent = await page.content();
+                if (pageContent.includes('reservation') || pageContent.includes('booked') || pageContent.includes('confirmed')) {
+                  completed = true;
+                  break;
+                }
+              } catch {}
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            console.log(`Booking completed after ${Date.now() - completionStart}ms`);
             
             const finalUrl = page.url();
             console.log('Final URL after Reserve:', finalUrl);
@@ -702,8 +747,17 @@ export class PassesService {
           };
         }
         
-        // Wait for navigation/page load (reduced for speed)
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Poll for page to load after button click (check every 100ms, max 2s)
+        const navStart = Date.now();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        while (Date.now() - navStart < 2000) {
+          try {
+            const state = await page.evaluate(() => document.readyState);
+            if (state === 'complete') break;
+          } catch {}
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        console.log(`Page loaded after ${Date.now() - navStart}ms`);
         
         // Step 2: Look for and click "Continue" or "Next" or "Navigate" button
         const continueButtonSelectors = [
@@ -723,9 +777,12 @@ export class PassesService {
             const element = await page.$(selector);
             if (element) {
               console.log('Found continue button with selector:', selector);
+              const clickStart = Date.now();
               await element.click();
               console.log('Clicked continue button');
-              await new Promise(resolve => setTimeout(resolve, 500));
+              // Small delay to allow click to register
+              await new Promise(resolve => setTimeout(resolve, 100));
+              console.log(`Continue button processed in ${Date.now() - clickStart}ms`);
               break;
             }
           } catch (e) {
@@ -748,9 +805,20 @@ export class PassesService {
               const element = await page.$(selector);
               if (element) {
                 console.log('Found final confirmation button with selector:', selector);
+                const confirmStart = Date.now();
                 await element.click();
                 console.log('Clicked final confirmation button');
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                // Poll for confirmation to complete (check every 100ms, max 3s)
+                let confirmed = false;
+                while (!confirmed && Date.now() - confirmStart < 3000) {
+                  const url = page.url();
+                  if (url.includes('confirmation') || url.includes('success') || url.includes('complete')) {
+                    confirmed = true;
+                    break;
+                  }
+                  await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                console.log(`Final confirmation completed in ${Date.now() - confirmStart}ms`);
                 break;
               }
             } catch (e) {
