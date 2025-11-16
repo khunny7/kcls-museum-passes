@@ -17,22 +17,30 @@ else
   echo "Root node_modules already exists (bundled in deployment - skipping install)"
 fi
 
-# Install API dependencies and let Puppeteer download Chrome if needed
+# Install API dependencies
 echo "Checking API dependencies..."
 cd apps/api
 if [ ! -d "node_modules" ]; then
-  echo "Installing API dependencies (including Puppeteer Chrome)..."
+  echo "Installing API dependencies..."
   npm ci --omit=dev
   echo "API dependencies installed successfully"
 else
   echo "API node_modules already exists (bundled in deployment - skipping install)"
 fi
 
-# Check if Puppeteer's Chrome is available, if not download it
-echo "Ensuring Puppeteer Chrome is available..."
-if [ ! -d "node_modules/puppeteer/.local-chromium" ] && [ ! -d "node_modules/puppeteer/.local-chrome" ]; then
-  echo "Downloading Puppeteer's Chrome browser..."
-  npx puppeteer browsers install chrome || echo "Chrome download completed with warnings"
+# Download Chrome for Puppeteer (not bundled in deployment to reduce size)
+echo "Checking for Puppeteer Chrome..."
+CHROME_PATH=$(node -e "const puppeteer = require('puppeteer'); console.log(puppeteer.executablePath());" 2>/dev/null || echo "")
+
+if [ -z "$CHROME_PATH" ] || [ ! -f "$CHROME_PATH" ]; then
+  echo "Puppeteer Chrome not found, downloading..."
+  # Use @puppeteer/browsers to download Chrome to a persistent location
+  npx @puppeteer/browsers install chrome@stable --path /home/.cache/puppeteer
+  echo "Chrome download complete"
+  # Set the path for Puppeteer to find it
+  export PUPPETEER_CACHE_DIR="/home/.cache/puppeteer"
+else
+  echo "Puppeteer Chrome already available at: $CHROME_PATH"
 fi
 
 echo "API directory contents:"
@@ -40,8 +48,8 @@ ls -la
 
 cd ../..
 
-# Don't set PUPPETEER_EXECUTABLE_PATH - let Puppeteer use its bundled Chrome
-echo "Puppeteer will use bundled Chrome (not system Chromium)"
+# Let Puppeteer use its downloaded Chrome
+echo "Puppeteer configured to use downloaded Chrome"
 
 # Start the API server
 echo "Starting API server from $(pwd)..."

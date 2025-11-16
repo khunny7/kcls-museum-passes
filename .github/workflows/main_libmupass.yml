@@ -12,6 +12,7 @@ on:
 env:
   NODE_VERSION: '22.x'
   DEPLOY_DIR: deploy
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
 
 jobs:
   build:
