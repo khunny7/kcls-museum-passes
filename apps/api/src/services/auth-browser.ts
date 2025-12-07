@@ -28,30 +28,72 @@ export class BrowserAuthService {
   private readonly BOOKING_PAGE = 'https://rooms.kcls.org/passes/33c1f0af9b02/book?date=2025-11-04&pass=bd7ebca17e8a&digital=1&physical=0&location=0';
   private readonly AUTH_URL = 'https://kcls.libapps.com/libapps/libauth?auth_id=1963';
 
+  /**
+   * Get Chrome executable path for Puppeteer
+   * Checks environment variables and common Azure paths
+   */
+  private getExecutablePath(): string | undefined {
+    // Check if explicitly set via environment variable (set by startup.sh)
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+      console.log('[BrowserAuth] Using PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH);
+      return process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+    
+    // Let Puppeteer find it automatically
+    console.log('[BrowserAuth] No explicit executable path, letting Puppeteer find Chrome automatically');
+    return undefined;
+  }
+
   async initialize(): Promise<void> {
     console.log('[BrowserAuth.initialize] Method called');
     if (!this.browser) {
       console.log('[BrowserAuth.initialize] No existing browser, launching new one...');
+      
+      // Log environment for debugging
+      console.log('[BrowserAuth.initialize] PUPPETEER_CACHE_DIR:', process.env.PUPPETEER_CACHE_DIR || '(not set)');
+      console.log('[BrowserAuth.initialize] PUPPETEER_EXECUTABLE_PATH:', process.env.PUPPETEER_EXECUTABLE_PATH || '(not set)');
+      
+      const executablePath = this.getExecutablePath();
+      console.log('[BrowserAuth.initialize] Using executable path:', executablePath || '(auto-detect)');
       console.log('[BrowserAuth.initialize] Calling puppeteer.launch()...');
+      
       const start = Date.now();
       try {
+        const launchOptions: any = {
+          headless: true, // Run in headless mode (no visible browser window)
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled', // Hide automation
+            '--disable-dev-shm-usage', // Overcome limited resource problems
+            '--disable-gpu', // Not needed in headless
+            '--single-process', // Helps in constrained environments
+            '--no-zygote', // Helps in containerized environments
+          ],
+        };
+        
+        // Only set executablePath if we have one
+        if (executablePath) {
+          launchOptions.executablePath = executablePath;
+        }
+        
         this.browser = await Promise.race([
-          puppeteer.launch({
-            headless: true, // Run in headless mode (no visible browser window)
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-blink-features=AutomationControlled', // Hide automation
-              '--disable-dev-shm-usage', // Overcome limited resource problems
-              '--disable-gpu', // Not needed in headless
-            ],
-          }),
+          puppeteer.launch(launchOptions),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Browser launch timeout after 30s')), 30000))
         ]);
         const elapsed = Date.now() - start;
         console.log(`[BrowserAuth.initialize] Browser launched successfully in ${elapsed}ms`);
       } catch (error: any) {
         console.error('[BrowserAuth.initialize] Failed to launch browser:', error.message);
+        console.error('[BrowserAuth.initialize] Full error:', error);
+        
+        // Provide helpful error message for Chrome not found
+        if (error.message.includes('Could not find Chrome') || error.message.includes('executablePath')) {
+          console.error('[BrowserAuth.initialize] Chrome not found. Please ensure Chrome is installed.');
+          console.error('[BrowserAuth.initialize] Run: npx puppeteer browsers install chrome');
+          console.error('[BrowserAuth.initialize] Or set PUPPETEER_EXECUTABLE_PATH environment variable');
+        }
+        
         throw new Error(`Failed to launch browser: ${error.message}`);
       }
     } else {

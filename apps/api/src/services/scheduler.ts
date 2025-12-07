@@ -1,6 +1,6 @@
 import schedule from 'node-schedule';
 import { PassesService } from './passes.js';
-import { browserAuthService } from './auth-browser.js';
+import { browserAuthService, browserSessions } from './auth-browser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -218,6 +218,20 @@ class SchedulerService {
       }
 
       this.log(bookingId, `Login successful, sessionId: ${loginResult.sessionId}`);
+
+      // IMPORTANT: Store the session in browserSessions so bookPass can find it
+      if (loginResult.cookies) {
+        browserSessions.set(loginResult.sessionId, {
+          sessionId: loginResult.sessionId,
+          cookies: loginResult.cookies,
+          expiresAt: loginResult.expiresAt,
+          libraryCard: loginResult.libraryCard,
+          browser: loginResult.browser,
+          context: loginResult.context,
+          page: loginResult.page,
+        });
+        this.log(bookingId, `Session stored in browserSessions`);
+      }
 
       // Now book the pass using the passes service directly
       this.log(bookingId, 'Attempting to book pass...');
