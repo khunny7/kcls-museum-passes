@@ -1,23 +1,20 @@
 import { Router, Request, Response } from 'express';
-import { authService, AuthCredentials, AuthResponse } from '../services/auth.js';
+import { httpAuthService } from '../services/auth-http.js';
+import { httpBookingService } from '../services/booking-http.js';
 
 const router = Router();
 
-// Toggle between browser-based (Puppeteer) and direct HTTP auth
-const USE_BROWSER_AUTH = true; // Direct HTTP gets 400 - need real browser to bypass bot detection
-
 /**
  * POST /api/auth/login
- * Authenticate with library card and PIN
+ * Authenticate with library card and PIN using HTTP-only approach (no Puppeteer)
  */
 router.post('/login', async (req: Request, res: Response) => {
   console.log('[AUTH ROUTE] ========================================');
   console.log('[AUTH ROUTE] POST /api/auth/login received');
-  console.log('[AUTH ROUTE] Request body:', req.body);
-  console.log('[AUTH ROUTE] USE_BROWSER_AUTH =', USE_BROWSER_AUTH);
+  console.log('[AUTH ROUTE] Request body:', { ...req.body, pin: '****' });
   
   try {
-    const { libraryCard, pin, bookingUrl }: AuthCredentials & { bookingUrl?: string } = req.body;
+    const { libraryCard, pin, bookingUrl }: { libraryCard: string; pin: string; bookingUrl?: string } = req.body;
 
     if (!libraryCard || !pin) {
       console.log('[AUTH ROUTE] Validation failed: missing credentials');
@@ -29,44 +26,19 @@ router.post('/login', async (req: Request, res: Response) => {
 
     console.log('[AUTH ROUTE] Credentials validated');
     console.log('[AUTH ROUTE] Library card:', libraryCard);
-    console.log('[AUTH ROUTE] Booking URL:', bookingUrl || '(using default)');
+    console.log('[AUTH ROUTE] Booking URL:', bookingUrl || '(none)');
 
-    // Use browser-based auth if enabled, otherwise use direct HTTP
-    let result: AuthResponse;
-    if (USE_BROWSER_AUTH) {
-      console.log('[AUTH ROUTE] Using browser-based auth (Puppeteer)');
-      console.log('[AUTH ROUTE] BEFORE dynamic import...');
-      try {
-        // Dynamic import to avoid blocking tsx
-        console.log('[AUTH ROUTE] STARTING dynamic import...');
-        const { browserAuthService, browserSessions } = await import('../services/auth-browser.js');
-        console.log('[AUTH ROUTE] AFTER dynamic import - imported successfully');
-        console.log('[AUTH ROUTE] browserAuthService type:', typeof browserAuthService);
-        console.log('[AUTH ROUTE] Calling browserAuthService.login()...');
-        result = await browserAuthService.login({ libraryCard, pin, bookingUrl });
-        console.log('[AUTH ROUTE] browserAuthService.login() returned:', result);
-        
-        // Store session with cookies if login was successful
-        if (result.success && result.cookies) {
-          browserSessions.set(result.sessionId, {
-            sessionId: result.sessionId,
-            cookies: result.cookies,
-            expiresAt: result.expiresAt,
-            libraryCard: result.libraryCard,
-            browser: result.browser,
-            context: result.context,
-            page: result.page, // Store the page for reuse in booking
-          });
-          console.log('[AUTH ROUTE] Stored browser session:', result.sessionId);
-        }
-      } catch (importError) {
-        console.error('[AUTH ROUTE] Error during browser auth:', importError);
-        throw importError;
-      }
+    // Use HTTP-based auth (no Puppeteer needed)
+    let result;
+    if (bookingUrl) {
+      console.log('[AUTH ROUTE] Using HTTP auth with booking URL');
+      result = await httpAuthService.loginForBooking({ libraryCard, pin }, bookingUrl);
     } else {
-      console.log('[AUTH ROUTE] Using direct HTTP auth');
-      result = await authService.login({ libraryCard, pin });
+      console.log('[AUTH ROUTE] Using HTTP auth (standard login)');
+      result = await httpAuthService.login({ libraryCard, pin });
     }
+
+    console.log('[AUTH ROUTE] Auth result:', { ...result, token: result.token ? '****' : undefined });
 
     if (!result.success) {
       return res.status(401).json(result);
@@ -77,7 +49,6 @@ router.post('/login', async (req: Request, res: Response) => {
     console.error('[AUTH ROUTE] ========================================');
     console.error('[AUTH ROUTE] Login error caught:', error);
     console.error('[AUTH ROUTE] Error message:', error?.message);
-    console.error('[AUTH ROUTE] Error stack:', error?.stack);
     console.error('[AUTH ROUTE] ========================================');
     res.status(500).json({
       success: false,
@@ -101,7 +72,7 @@ router.post('/logout', (req: Request, res: Response) => {
       });
     }
 
-    const success = authService.logout(sessionId);
+    const success = httpAuthService.logout(sessionId);
 
     res.json({ success });
   } catch (error: any) {
@@ -121,7 +92,7 @@ router.get('/session/:sessionId', (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
 
-    const session = authService.getSession(sessionId);
+    const session = httpAuthService.getSession(sessionId);
 
     if (!session) {
       return res.status(401).json({
@@ -158,7 +129,7 @@ router.post('/crc', (req: Request, res: Response) => {
       });
     }
 
-    const crc = authService.calculateCRC(museum, pass, date);
+    const crc = httpBookingService.calculateCRC(museum, pass, date);
 
     res.json({ crc });
   } catch (error: any) {

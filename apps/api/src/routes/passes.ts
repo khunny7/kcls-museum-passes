@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { PassesService } from '../services/passes.js';
+import { httpBookingService } from '../services/booking-http.js';
 
 export const passesRouter = Router();
 const passesService = new PassesService();
@@ -89,31 +90,42 @@ passesRouter.get('/:id/availability', async (req: Request, res: Response) => {
 // POST /api/passes/:id/book - Book a pass
 passesRouter.post('/:id/book', async (req: Request, res: Response) => {
   try {
-    const { date, passId, digital, physical, location, sessionId } = req.body;
+    const { date, passId, digital, physical, location, sessionId, credentials } = req.body;
     
     if (!date || !passId) {
       return res.status(400).json({ error: 'Date and passId are required' });
     }
 
-    if (!sessionId) {
-      return res.status(401).json({ 
-        success: false,
-        requiresAuth: true,
-        error: 'You must be logged in to book a pass' 
-      });
-    }
-
-    const booking = await passesService.bookPass(
-      req.params.id,
+    const bookingRequest = {
+      museumId: req.params.id,
       date,
       passId,
-      sessionId,
-      digital,
-      physical,
-      location
-    );
-    
-    res.json(booking);
+      digital: digital === true || digital === 'true',
+      physical: physical === true || physical === 'true',
+      location: location || '0',
+    };
+
+    // Option 1: Credentials provided - use unified login+book flow (recommended)
+    if (credentials?.libraryCard && credentials?.pin) {
+      const booking = await httpBookingService.bookWithCredentials(
+        { libraryCard: credentials.libraryCard, pin: credentials.pin },
+        bookingRequest
+      );
+      return res.json(booking);
+    }
+
+    // Option 2: SessionId provided - use existing session (legacy support)
+    if (sessionId) {
+      const booking = await httpBookingService.bookPass(sessionId, bookingRequest);
+      return res.json(booking);
+    }
+
+    // Neither provided
+    return res.status(401).json({ 
+      success: false,
+      requiresAuth: true,
+      error: 'Credentials or sessionId required to book a pass' 
+    });
   } catch (error) {
     console.error(`Failed to book pass ${req.params.id}:`, error);
     res.status(500).json({ error: 'Failed to book pass' });

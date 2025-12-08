@@ -76,10 +76,6 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
   const [bookingResult, setBookingResult] = useState<{ success: boolean; message: string; bookingId?: string; authUrl?: string } | null>(null)
   const queryClient = useQueryClient()
 
-  const getBookingUrl = (date: string) => {
-    return `https://rooms.kcls.org/passes/${museumId}/book?digital=true&physical=false&location=0&date=${date}`
-  }
-
   const handleBooking = (slot: AvailabilitySlot) => {
     if (!slot.available) return
     
@@ -299,46 +295,18 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
       return
     }
 
-    try {
-      const bookingUrl = getBookingUrl(selectedSlot.date)
-      const loginResponse = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          libraryCard: credentials.libraryCard,
-          pin: credentials.pin,
-          bookingUrl: bookingUrl
-        }),
-      })
-
-      const loginResult = await loginResponse.json()
-
-      if (!loginResult.success) {
-        setBookingResult({
-          success: false,
-          message: loginResult.error || 'Login failed. Please check your credentials.'
-        })
-        setShowResultModal(true)
-        return
+    // Single unified call - login + book handled by backend
+    bookingMutation.mutate({
+      date: selectedSlot.date,
+      passId: selectedSlot.passId,
+      digital: selectedSlot.digital,
+      physical: selectedSlot.physical,
+      location: '0',
+      credentials: {
+        libraryCard: credentials.libraryCard,
+        pin: credentials.pin
       }
-
-      bookingMutation.mutate({
-        date: selectedSlot.date,
-        passId: selectedSlot.passId,
-        digital: selectedSlot.digital,
-        physical: selectedSlot.physical,
-        location: '0',
-        sessionId: loginResult.sessionId
-      })
-    } catch (error: any) {
-      setBookingResult({
-        success: false,
-        message: error.message || 'An error occurred during login.'
-      })
-      setShowResultModal(true)
-    }
+    })
   }
 
   const generateCalendarDays = () => {

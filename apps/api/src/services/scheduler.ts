@@ -1,6 +1,7 @@
 import schedule from 'node-schedule';
 import { PassesService } from './passes.js';
-import { browserAuthService, browserSessions } from './auth-browser.js';
+import { httpAuthService, httpSessions } from './auth-http.js';
+import { httpBookingService } from './booking-http.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -200,52 +201,22 @@ class SchedulerService {
     this.saveScheduledBookings();
 
     try {
-      // First, login with credentials using the browser auth service directly
-      this.log(bookingId, 'Logging in...');
-      const bookingUrl = `https://rooms.kcls.org/passes/${booking.museumId}/book?digital=${booking.digital}&physical=${booking.physical}&location=${booking.location}&date=${booking.date}`;
-      
-      this.log(bookingId, `Booking URL: ${bookingUrl}`);
-      this.log(bookingId, `Library Card: ${booking.credentials.libraryCard}`);
-      
-      const loginResult = await browserAuthService.login({
-        libraryCard: booking.credentials.libraryCard,
-        pin: booking.credentials.pin,
-        bookingUrl: bookingUrl
-      });
-
-      if (!loginResult.success) {
-        throw new Error(`Login failed: ${loginResult.error}`);
-      }
-
-      this.log(bookingId, `Login successful, sessionId: ${loginResult.sessionId}`);
-
-      // IMPORTANT: Store the session in browserSessions so bookPass can find it
-      if (loginResult.cookies) {
-        browserSessions.set(loginResult.sessionId, {
-          sessionId: loginResult.sessionId,
-          cookies: loginResult.cookies,
-          expiresAt: loginResult.expiresAt,
-          libraryCard: loginResult.libraryCard,
-          browser: loginResult.browser,
-          context: loginResult.context,
-          page: loginResult.page,
-        });
-        this.log(bookingId, `Session stored in browserSessions`);
-      }
-
-      // Now book the pass using the passes service directly
-      this.log(bookingId, 'Attempting to book pass...');
-      const result = await this.passesService.bookPass(
-        booking.museumId,
-        booking.date,
-        booking.passId,
-        loginResult.sessionId!,
-        booking.digital,
-        booking.physical,
-        booking.location
+      // Use the unified booking method - same code path as regular booking
+      const result = await httpBookingService.bookWithCredentials(
+        {
+          libraryCard: booking.credentials.libraryCard,
+          pin: booking.credentials.pin,
+        },
+        {
+          museumId: booking.museumId,
+          date: booking.date,
+          passId: booking.passId,
+          digital: booking.digital,
+          physical: booking.physical,
+          location: booking.location,
+        },
+        (message) => this.log(bookingId, message) // Pass our logger
       );
-
-      this.log(bookingId, `Booking result: ${JSON.stringify(result)}`);
 
       if (result.success) {
         booking.status = 'completed';
@@ -256,6 +227,7 @@ class SchedulerService {
         booking.result = result;
         this.log(bookingId, `=== BOOKING FAILED: ${result.error} ===`);
       }
+
     } catch (error: any) {
       booking.status = 'failed';
       booking.result = { error: error.message };
