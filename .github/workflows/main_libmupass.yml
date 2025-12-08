@@ -27,11 +27,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies
+      - name: Install dependencies (workspace root)
         run: |
           npm ci
-          npm ci --prefix apps/api
-          npm ci --prefix apps/web
 
       - name: Build API
         run: npm run build:api
@@ -52,7 +50,6 @@ jobs:
           cp -R apps/api/dist "${DEPLOY_DIR}/apps/api/"
           cp -R apps/api/src "${DEPLOY_DIR}/apps/api/"
           cp apps/api/package.json "${DEPLOY_DIR}/apps/api/"
-          cp apps/api/package-lock.json "${DEPLOY_DIR}/apps/api/"
           cp apps/api/tsconfig.json "${DEPLOY_DIR}/apps/api/"
           
           # Create logs directory (will be populated at runtime)
