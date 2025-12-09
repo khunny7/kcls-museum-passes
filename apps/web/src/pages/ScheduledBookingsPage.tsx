@@ -65,6 +65,12 @@ async function fetchActiveJobs(): Promise<ActiveJob[]> {
   return data.jobs || []
 }
 
+// Format date strings (YYYY-MM-DD) without timezone shifting to the prior day
+const formatLocalDate = (dateStr: string, options?: Intl.DateTimeFormatOptions) => {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', options)
+}
+
 async function fetchBookingLogs(id: string): Promise<string[]> {
   const response = await fetch(`/api/scheduler/bookings/${id}/logs`)
   if (!response.ok) {
@@ -270,7 +276,7 @@ export function ScheduledBookingsPage() {
                     <div>
                       <span className="text-gray-500 text-xs">Target Date:</span>
                       <p className="font-medium text-gray-900">
-                        {new Date(job.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {formatLocalDate(job.date, { month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
                     </div>
                     <div>
@@ -352,7 +358,7 @@ export function ScheduledBookingsPage() {
                     </div>
                     
                     <p className="text-base text-gray-600 mb-4">
-                      Booking for {new Date(booking.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                      Booking for {formatLocalDate(booking.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
                     </p>
 
                     <div className="grid grid-cols-2 gap-4 text-sm">

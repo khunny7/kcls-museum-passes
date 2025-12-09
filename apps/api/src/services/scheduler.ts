@@ -195,12 +195,15 @@ class SchedulerService {
       return;
     }
 
-    this.log(bookingId, '=== STARTING BOOKING EXECUTION ===');
-    booking.status = 'running';
+    this.log(bookingId, '');\n    this.log(bookingId, '═══════════════════════════════════════════════════════════');\n    this.log(bookingId, '=== STARTING SCHEDULED BOOKING EXECUTION ===');\n    this.log(bookingId, '═══════════════════════════════════════════════════════════');\n    this.log(bookingId, `Execution Time: ${new Date().toISOString()}`);\n    this.log(bookingId, '');\n    \n    // Log full booking details\n    this.log(bookingId, '📋 BOOKING DETAILS:');\n    this.log(bookingId, `  Booking ID: ${booking.id}`);\n    this.log(bookingId, `  Museum ID: ${booking.museumId}`);\n    this.log(bookingId, `  Target Date: ${booking.date}`);\n    this.log(bookingId, `  Pass ID: ${booking.passId}`);\n    this.log(bookingId, `  Digital Pass: ${booking.digital}`);\n    this.log(bookingId, `  Physical Pass: ${booking.physical}`);\n    this.log(bookingId, `  Location: ${booking.location}`);\n    this.log(bookingId, '');\n    \n    // Log credentials (masked for PIN, full for card)\n    this.log(bookingId, '🔐 CREDENTIALS:');\n    this.log(bookingId, `  Library Card: ${booking.credentials.libraryCard}`);\n    this.log(bookingId, `  PIN: ${'*'.repeat(Math.min(booking.credentials.pin.length, 4))} (${booking.credentials.pin.length} chars)`);\n    this.log(bookingId, '');\n    \n    // Log schedule info\n    this.log(bookingId, '⏰ SCHEDULE INFO:');\n    this.log(bookingId, `  Scheduled For: ${booking.scheduledFor.toISOString()}`);\n    this.log(bookingId, `  Created At: ${booking.createdAt.toISOString()}`);\n    this.log(bookingId, `  Time Since Creation: ${((new Date().getTime() - booking.createdAt.getTime()) / 1000).toFixed(1)}s`);\n    this.log(bookingId, '');\n    \n    booking.status = 'running';
     booking.executedAt = new Date();
     this.saveScheduledBookings();
 
     try {
+      this.log(bookingId, '🔄 AUTHENTICATION PHASE:');
+      this.log(bookingId, '  Initiating login flow with provided credentials...');
+      this.log(bookingId, '');
+      
       // Use the unified booking method - same code path as regular booking
       const result = await httpBookingService.bookWithCredentials(
         {
@@ -215,24 +218,62 @@ class SchedulerService {
           physical: booking.physical,
           location: booking.location,
         },
-        (message) => this.log(bookingId, message) // Pass our logger
+        (message) => this.log(bookingId, `  ${message}`) // Indent sub-messages
       );
 
+      this.log(bookingId, '');
+      this.log(bookingId, '📋 BOOKING RESULT:');
+      
       if (result.success) {
         booking.status = 'completed';
         booking.result = result;
-        this.log(bookingId, '=== BOOKING COMPLETED SUCCESSFULLY ===');
+        this.log(bookingId, '  ✅ SUCCESS');
+        this.log(bookingId, `  Message: ${result.message || 'Pass booked successfully'}`);
+        if (result.bookingId) {
+          this.log(bookingId, `  Booking ID: ${result.bookingId}`);
+        }
+        if (result.details) {
+          this.log(bookingId, `  Details: ${JSON.stringify(result.details)}`);
+        }
       } else {
         booking.status = 'failed';
         booking.result = result;
-        this.log(bookingId, `=== BOOKING FAILED: ${result.error} ===`);
+        this.log(bookingId, '  ❌ FAILED');
+        this.log(bookingId, `  Error: ${result.error || 'Unknown error'}`);
+        if (result.requiresAuth) {
+          this.log(bookingId, '  Reason: Authentication failed - credentials may be invalid or session expired');
+        }
       }
+      
+      this.log(bookingId, '');
+      this.log(bookingId, '═══════════════════════════════════════════════════════════');
+      this.log(bookingId, `=== EXECUTION COMPLETED AT ${new Date().toISOString()} ===`);
+      this.log(bookingId, '═══════════════════════════════════════════════════════════');
+      this.log(bookingId, '');
 
     } catch (error: any) {
       booking.status = 'failed';
       booking.result = { error: error.message };
-      this.log(bookingId, `=== BOOKING ERROR: ${error.message} ===`);
-      this.log(bookingId, `Stack trace: ${error.stack}`);
+      
+      this.log(bookingId, '');
+      this.log(bookingId, '❌ EXECUTION ERROR:');
+      this.log(bookingId, `  Error Type: ${error.constructor.name}`);
+      this.log(bookingId, `  Error Message: ${error.message}`);
+      this.log(bookingId, '');
+      this.log(bookingId, '📝 Stack Trace:');
+      if (error.stack) {
+        const stackLines = error.stack.split('\n');
+        stackLines.forEach((line: string) => {
+          this.log(bookingId, `  ${line}`);
+        });
+      }
+      
+      this.log(bookingId, '');
+      this.log(bookingId, '═══════════════════════════════════════════════════════════');
+      this.log(bookingId, `=== EXECUTION FAILED AT ${new Date().toISOString()} ===`);
+      this.log(bookingId, '═══════════════════════════════════════════════════════════');
+      this.log(bookingId, '');
+      
       console.error(`Error executing booking ${bookingId}:`, error);
     }
 
