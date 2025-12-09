@@ -65,6 +65,8 @@ class HttpAuthService {
   /**
    * Store cookies from response headers with correct path
    * Fixes axios-cookiejar-support bug where paths include query strings
+   * Store cookies exactly as received from the server (no decoding).
+   * Fixes axios-cookiejar-support bug where paths include query strings.
    */
   private async storeCookiesFromResponse(
     jar: CookieJar,
@@ -78,6 +80,8 @@ class HttpAuthService {
     
     for (const cookieStr of setCookieHeaders) {
       try {
+        // Store cookie value exactly as received from server
+        // Do NOT decode - the server may expect the encoded value
         const cookie = Cookie.parse(cookieStr);
         if (cookie) {
           // Force path to "/" if not explicitly set in the cookie string
@@ -92,13 +96,14 @@ class HttpAuthService {
           await jar.setCookie(cookie, requestUrl);
         }
       } catch (e) {
-        console.warn('[HttpAuth] Failed to parse cookie:', cookieStr.substring(0, 50));
+        console.warn('[HttpAuth] Failed to parse cookie:', cookieStr.substring(0, 50), e);
       }
     }
   }
 
   /**
-   * Get cookie header string for a request URL
+   * Get cookie header string for a request URL.
+   * Send cookie values exactly as received - do NOT decode.
    */
   private async getCookieHeader(jar: CookieJar, url: string): Promise<string> {
     return await jar.getCookieString(url);
@@ -128,6 +133,15 @@ class HttpAuthService {
       }
 
       response = await client.get(currentUrl, { headers: requestHeaders });
+      
+      // VERBOSE: Log set-cookie headers
+      const setCookies = response.headers['set-cookie'];
+      if (setCookies) {
+        console.log(`[HttpAuth] Set-Cookie from ${new URL(currentUrl).hostname}:`);
+        for (const c of setCookies) {
+          console.log(`  ${c}`);
+        }
+      }
       
       // Store cookies from response with correct paths
       await this.storeCookiesFromResponse(jar, response, currentUrl);
@@ -216,6 +230,25 @@ class HttpAuthService {
 
       const linkerUrl = bookingResponse.headers.location as string;
       console.log('[HttpAuth] Linker URL:', linkerUrl.substring(0, 100) + '...');
+      
+      // Log the RAW location header to see if ? is present
+      console.log('[HttpAuth] RAW Location header analysis:');
+      const rawTarget = linkerUrl.split('target=')[1] || '';
+      console.log(`  Raw target (from split): ${rawTarget}`);
+      console.log(`  Raw has ?: ${rawTarget.includes('?')}`);
+      console.log(`  Raw has /: ${rawTarget.includes('/')}`);
+      
+      // Extract and log the target parameter to compare with dest cookie later
+      // NOTE: URL.searchParams.get() may URL-decode the value!
+      const linkerUrlObj = new URL(linkerUrl);
+      const targetParam = linkerUrlObj.searchParams.get('target') || '';
+      console.log('[HttpAuth] Target from URL.searchParams.get():');
+      console.log(`  Parsed: ${targetParam}`);
+      console.log(`  Parsed has ?: ${targetParam.includes('?')}`);
+      console.log(`  Parsed has /: ${targetParam.includes('/')}`);
+      
+      // Compare raw vs parsed
+      console.log(`[HttpAuth] Raw vs Parsed MATCH: ${rawTarget === targetParam}`);
 
       // Step 2: Follow the linker URL to get the auth form page
       console.log('[HttpAuth] Step 2: Following linker to auth form...');
@@ -229,6 +262,25 @@ class HttpAuthService {
       console.log('[HttpAuth] Form page URL:', formUrl.substring(0, 80) + '...');
       console.log('[HttpAuth] Form page status:', formResponse.status);
 
+      // Log ALL cookies in the jar for debugging
+      const allCookies = await this.getAllCookiesFromJar(jar);
+      console.log('[HttpAuth] All cookies in jar:');
+      for (const c of allCookies) {
+        console.log(`  ${c.domain} | ${c.key} | path=${c.path}`);
+        // Log the dest cookie value to verify it's our booking URL
+        if (c.key === 'dest') {
+          console.log(`  [dest raw]: ${c.value}`);
+          try {
+            // Use base64url decoding (replace _ with / and - with +)
+            const base64 = c.value.replace(/_/g, '/').replace(/-/g, '+');
+            const decoded = Buffer.from(base64, 'base64').toString('utf8');
+            console.log(`  [dest decoded]: ${decoded}`);
+          } catch (e) {
+            console.log(`  [dest decode error]: ${e}`);
+          }
+        }
+      }
+
       // Log cookies after loading form
       const cookiesAfterForm = await jar.getCookies('https://kcls.libapps.com/');
       const libAuthCookies = await jar.getCookies('https://libauth.com/');
@@ -238,41 +290,73 @@ class HttpAuthService {
       // Step 3: POST credentials to libauth.com/form_login
       console.log('[HttpAuth] Step 3: Submitting credentials...');
       
-      // The login_url should be exactly: https://kcls.libapps.com/libapps/libauth?auth_id=1963
-      // Using the constant to ensure we match what the server expects
+      // The login_url parameter must be the libapps callback URL
+      // This is where libauth.com redirects after successful auth
+      // The callback then redirects to the original booking URL with the token
       const loginCallbackUrl = `https://kcls.libapps.com/libapps/libauth?auth_id=${this.AUTH_ID}`;
       
       console.log('[HttpAuth] Using login_url:', loginCallbackUrl);
       
       const postBody = `auth_id=${this.AUTH_ID}&login_url=${encodeURIComponent(loginCallbackUrl)}&username=${encodeURIComponent(credentials.libraryCard)}&password=${encodeURIComponent(credentials.pin)}`;
       
-      console.log('[HttpAuth] POST body (redacted):', `auth_id=${this.AUTH_ID}&login_url=...&username=${credentials.libraryCard}&password=****`);
+      console.log('[HttpAuth] POST body (full):', postBody);
 
       // Get cookies for the POST request
       const postCookies = await this.getCookieHeader(jar, this.AUTH_POST_URL);
-      console.log('[HttpAuth] Cookies for POST:', postCookies ? `${postCookies.length} chars` : 'NONE');
+      console.log('[HttpAuth] ===== COOKIES FOR POST =====');
+      console.log('[HttpAuth] Cookie header length:', postCookies ? postCookies.length : 0);
+      console.log('[HttpAuth] Full cookie string:');
+      console.log(postCookies);
+      
+      // Extract and log the dest cookie value specifically for debugging
+      const destMatch = postCookies.match(/dest=([^;]+)/);
+      if (destMatch) {
+        console.log('[HttpAuth] dest cookie value being sent:');
+        console.log(`  Raw: ${destMatch[1]}`);
+        console.log(`  Includes %2F: ${destMatch[1].includes('%2F')}`);
+        console.log(`  Includes ?: ${destMatch[1].includes('?')}`);
+      }
+      console.log('[HttpAuth] ===== END COOKIES =====');
+
+      const postHeaders = {
+        ...this.getBaseHeaders(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': postBody.length.toString(),
+        'Origin': 'https://kcls.libapps.com',
+        'Referer': formUrl,
+        'Cache-Control': 'max-age=0',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'cross-site',
+        'sec-fetch-user': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Cookie': postCookies,
+      };
+      
+      console.log('[HttpAuth] ===== POST REQUEST HEADERS =====');
+      for (const [key, value] of Object.entries(postHeaders)) {
+        if (key === 'Cookie') {
+          console.log(`  ${key}: (see above)`);
+        } else {
+          console.log(`  ${key}: ${value}`);
+        }
+      }
+      console.log('[HttpAuth] ===== END HEADERS =====');
 
       const authResponse = await client.post(this.AUTH_POST_URL, postBody, {
-        headers: {
-          ...this.getBaseHeaders(),
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': postBody.length.toString(),
-          'Origin': 'https://kcls.libapps.com',
-          'Referer': formUrl,
-          'Cache-Control': 'max-age=0',
-          'sec-fetch-dest': 'document',
-          'sec-fetch-mode': 'navigate',
-          'sec-fetch-site': 'cross-site',
-          'sec-fetch-user': '?1',
-          'Upgrade-Insecure-Requests': '1',
-          'Cookie': postCookies,
-        },
+        headers: postHeaders,
       });
+      
+      console.log('[HttpAuth] ===== POST RESPONSE =====');
+      console.log('[HttpAuth] Status:', authResponse.status, authResponse.statusText);
+      console.log('[HttpAuth] Response headers:');
+      for (const [key, value] of Object.entries(authResponse.headers)) {
+        console.log(`  ${key}: ${value}`);
+      }
+      console.log('[HttpAuth] ===== END RESPONSE =====');
       
       // Store cookies from auth response
       await this.storeCookiesFromResponse(jar, authResponse, this.AUTH_POST_URL);
-
-      console.log('[HttpAuth] Auth response status:', authResponse.status);
 
       // Check for redirect with token
       if (authResponse.status === 303 && authResponse.headers.location) {
@@ -322,7 +406,66 @@ class HttpAuthService {
             token,
           };
         } else {
+          // No token in direct redirect - check if this is a callback URL with result=0
+          // If so, we need to follow the redirect to get the actual booking URL with token
+          if (redirectUrl.includes('result=0')) {
+            console.log('[HttpAuth] Got result=0, following callback to get token...');
+            
+            // Follow the callback redirect chain with proper headers
+            const callbackHeaders = {
+              'User-Agent': this.USER_AGENT,
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://libauth.com/',
+            };
+            
+            const { finalUrl, response: callbackResponse } = await this.followRedirects(
+              client,
+              jar,
+              redirectUrl,
+              callbackHeaders,
+              10
+            );
+            
+            console.log('[HttpAuth] Callback final URL:', finalUrl);
+            console.log('[HttpAuth] Callback response status:', callbackResponse.status);
+            
+            // Check if the final URL has a token
+            const finalUrlObj = new URL(finalUrl);
+            const finalToken = finalUrlObj.searchParams.get('token');
+            
+            if (finalToken) {
+              console.log('[HttpAuth] ✅ Token found after following callback!');
+              
+              const sessionId = this.generateSessionId();
+              const expiresAt = Date.now() + this.SESSION_DURATION;
+
+              const session: HttpAuthSession = {
+                sessionId,
+                cookieJar: jar,
+                expiresAt,
+                libraryCard: credentials.libraryCard,
+                token: finalToken,
+                bookingUrl: finalUrl,
+              };
+
+              httpSessions.set(sessionId, session);
+
+              return {
+                success: true,
+                sessionId,
+                expiresAt,
+                libraryCard: credentials.libraryCard,
+                token: finalToken,
+              };
+            }
+            
+            console.error('[HttpAuth] ❌ No token found even after following callback');
+            console.error('[HttpAuth] Final URL was:', finalUrl);
+          }
+          
           console.error('[HttpAuth] ❌ Redirect received but no token found');
+          console.error('[HttpAuth] Redirect URL was:', redirectUrl);
           return {
             success: false,
             sessionId: '',
