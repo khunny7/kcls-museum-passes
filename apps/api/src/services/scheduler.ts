@@ -195,7 +195,38 @@ class SchedulerService {
       return;
     }
 
-    this.log(bookingId, '');\n    this.log(bookingId, '═══════════════════════════════════════════════════════════');\n    this.log(bookingId, '=== STARTING SCHEDULED BOOKING EXECUTION ===');\n    this.log(bookingId, '═══════════════════════════════════════════════════════════');\n    this.log(bookingId, `Execution Time: ${new Date().toISOString()}`);\n    this.log(bookingId, '');\n    \n    // Log full booking details\n    this.log(bookingId, '📋 BOOKING DETAILS:');\n    this.log(bookingId, `  Booking ID: ${booking.id}`);\n    this.log(bookingId, `  Museum ID: ${booking.museumId}`);\n    this.log(bookingId, `  Target Date: ${booking.date}`);\n    this.log(bookingId, `  Pass ID: ${booking.passId}`);\n    this.log(bookingId, `  Digital Pass: ${booking.digital}`);\n    this.log(bookingId, `  Physical Pass: ${booking.physical}`);\n    this.log(bookingId, `  Location: ${booking.location}`);\n    this.log(bookingId, '');\n    \n    // Log credentials (masked for PIN, full for card)\n    this.log(bookingId, '🔐 CREDENTIALS:');\n    this.log(bookingId, `  Library Card: ${booking.credentials.libraryCard}`);\n    this.log(bookingId, `  PIN: ${'*'.repeat(Math.min(booking.credentials.pin.length, 4))} (${booking.credentials.pin.length} chars)`);\n    this.log(bookingId, '');\n    \n    // Log schedule info\n    this.log(bookingId, '⏰ SCHEDULE INFO:');\n    this.log(bookingId, `  Scheduled For: ${booking.scheduledFor.toISOString()}`);\n    this.log(bookingId, `  Created At: ${booking.createdAt.toISOString()}`);\n    this.log(bookingId, `  Time Since Creation: ${((new Date().getTime() - booking.createdAt.getTime()) / 1000).toFixed(1)}s`);\n    this.log(bookingId, '');\n    \n    booking.status = 'running';
+    this.log(bookingId, '');
+    this.log(bookingId, '═══════════════════════════════════════════════════════════');
+    this.log(bookingId, '=== STARTING SCHEDULED BOOKING EXECUTION ===');
+    this.log(bookingId, '═══════════════════════════════════════════════════════════');
+    this.log(bookingId, `Execution Time: ${new Date().toISOString()}`);
+    this.log(bookingId, '');
+    
+    // Log full booking details
+    this.log(bookingId, '📋 BOOKING DETAILS:');
+    this.log(bookingId, `  Booking ID: ${booking.id}`);
+    this.log(bookingId, `  Museum ID: ${booking.museumId}`);
+    this.log(bookingId, `  Target Date: ${booking.date}`);
+    this.log(bookingId, `  Pass ID: ${booking.passId}`);
+    this.log(bookingId, `  Digital Pass: ${booking.digital}`);
+    this.log(bookingId, `  Physical Pass: ${booking.physical}`);
+    this.log(bookingId, `  Location: ${booking.location}`);
+    this.log(bookingId, '');
+    
+    // Log credentials (masked for PIN, full for card)
+    this.log(bookingId, '🔐 CREDENTIALS:');
+    this.log(bookingId, `  Library Card: ${booking.credentials.libraryCard}`);
+    this.log(bookingId, `  PIN: ${'*'.repeat(Math.min(booking.credentials.pin.length, 4))} (${booking.credentials.pin.length} chars)`);
+    this.log(bookingId, '');
+    
+    // Log schedule info
+    this.log(bookingId, '⏰ SCHEDULE INFO:');
+    this.log(bookingId, `  Scheduled For: ${booking.scheduledFor.toISOString()}`);
+    this.log(bookingId, `  Created At: ${booking.createdAt.toISOString()}`);
+    this.log(bookingId, `  Time Since Creation: ${((new Date().getTime() - booking.createdAt.getTime()) / 1000).toFixed(1)}s`);
+    this.log(bookingId, '');
+    
+    booking.status = 'running';
     booking.executedAt = new Date();
     this.saveScheduledBookings();
 
