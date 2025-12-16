@@ -1,0 +1,31 @@
+[Unit]
+Description=KCLS Museum Passes (API + Frontend)
+After=network.target
+
+[Service]
+# Update WorkingDirectory if you clone elsewhere
+WorkingDirectory=/home/khunny7/repo/kcls-museum-passes
+
+# Use production start (assumes you ran npm run build:prod once)
+ExecStart=/usr/bin/npm run start:prod
+Restart=always
+RestartSec=5
+
+# Runtime environment
+Environment=NODE_ENV=production
+Environment=PORT=4000
+# Persist scheduler state/logs outside the repo (recommended)
+# Ensure this directory exists and is writable by the service user
+# Example setup:
+#   sudo mkdir -p /var/lib/kcls-museum
+#   sudo chown -R www-data:www-data /var/lib/kcls-museum
+Environment=SCHEDULER_DATA_DIR=/var/lib/kcls-museum
+# Add any secrets/env here, e.g.:
+# Environment=REDIS_URL=...
+
+# Run as a non-root user that can read the repo
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

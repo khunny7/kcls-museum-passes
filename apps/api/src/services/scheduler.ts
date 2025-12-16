@@ -35,6 +35,7 @@ class SchedulerService {
   private jobs: Map<string, schedule.Job> = new Map();
   private passesService: PassesService;
   private logsDir: string;
+  private defaultLogsDir: string;
 
   constructor() {
     this.passesService = new PassesService();
@@ -47,11 +48,16 @@ class SchedulerService {
     // When running compiled: __dirname is apps/api/dist, so go up one level to apps/api
     // When running with tsx: __dirname is apps/api/src, so go up one level to apps/api
     // Then add 'logs' to get apps/api/logs
-    const apiRoot = __dirname.includes('dist') 
+    const apiRoot = __dirname.includes('dist')
       ? path.join(__dirname, '..') // From dist -> api
       : path.join(__dirname, '..'); // From src -> api
-    
-    this.logsDir = path.join(apiRoot, 'logs');
+
+    // Default logs dir inside repo (legacy behavior)
+    this.defaultLogsDir = path.join(apiRoot, 'logs');
+
+    // Allow overriding data dir for persistence across deploys
+    const configuredDir = process.env.SCHEDULER_DATA_DIR || process.env.KCLS_DATA_DIR;
+    this.logsDir = configuredDir ? configuredDir : this.defaultLogsDir;
     
     console.log('   API root:', apiRoot);
     console.log('   Logs directory will be:', this.logsDir);
@@ -65,10 +71,56 @@ class SchedulerService {
       console.log('   ✅ Logs directory exists');
     }
 
+    // If a new data dir is configured and it's empty, but legacy data exists, migrate it
+    try {
+      if (this.logsDir !== this.defaultLogsDir) {
+        const newBookingsFile = path.join(this.logsDir, 'scheduled_bookings.json');
+        const oldBookingsFile = path.join(this.defaultLogsDir, 'scheduled_bookings.json');
+        const newHasBookings = fs.existsSync(newBookingsFile);
+        const oldHasBookings = fs.existsSync(oldBookingsFile);
+        if (!newHasBookings && oldHasBookings) {
+          this.logTemporary(`[MIGRATION] Copying legacy bookings and logs from ${this.defaultLogsDir} to ${this.logsDir}`);
+          this.migrateLogsDir(this.defaultLogsDir, this.logsDir);
+        }
+      }
+    } catch (e) {
+      console.warn('   ⚠️ Migration check failed:', (e as any)?.message);
+    }
+
     console.log(`📁 Scheduler logs directory: ${this.logsDir}`);
 
     // Load saved bookings on startup
     this.loadScheduledBookings();
+  }
+
+  private logTemporary(message: string) {
+    const timestamp = new Date().toISOString();
+    console.log(`[Scheduler] ${timestamp} ${message}`);
+  }
+
+  private migrateLogsDir(fromDir: string, toDir: string) {
+    try {
+      if (!fs.existsSync(fromDir)) return;
+      if (!fs.existsSync(toDir)) fs.mkdirSync(toDir, { recursive: true });
+
+      const entries = fs.readdirSync(fromDir);
+      for (const entry of entries) {
+        if (entry === '.' || entry === '..') continue;
+        if (!entry.endsWith('.json') && !entry.endsWith('.log')) continue;
+        const src = path.join(fromDir, entry);
+        const dst = path.join(toDir, entry);
+        try {
+          if (!fs.existsSync(dst)) {
+            fs.copyFileSync(src, dst);
+          }
+        } catch (e) {
+          console.warn(`   ⚠️ Failed to copy ${entry}:`, (e as any)?.message);
+        }
+      }
+      this.logTemporary(`[MIGRATION] Completed copying legacy files`);
+    } catch (e) {
+      this.logTemporary(`[MIGRATION] Error during migration: ${(e as any)?.message}`);
+    }
   }
 
   private log(bookingId: string, message: string) {

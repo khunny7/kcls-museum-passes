@@ -216,6 +216,8 @@ interface CredentialsModalProps {
 function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModalProps) {
   const [libraryCard, setLibraryCard] = useState('')
   const [pin, setPin] = useState('')
+  const [verifying, setVerifying] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<null | { ok: boolean; message: string }>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -254,6 +256,32 @@ function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModal
     setPin('')
     onClear()
     onClose()
+  }
+
+  const handleVerify = async () => {
+    setVerifyResult(null)
+    if (!libraryCard.trim() || !pin.trim()) {
+      setVerifyResult({ ok: false, message: 'Please enter both library card number and PIN' })
+      return
+    }
+    try {
+      setVerifying(true)
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ libraryCard: libraryCard.trim(), pin: pin.trim() })
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        setVerifyResult({ ok: true, message: 'Credentials verified successfully' })
+      } else {
+        setVerifyResult({ ok: false, message: data.error || 'Verification failed' })
+      }
+    } catch (e: any) {
+      setVerifyResult({ ok: false, message: e.message || 'Verification failed' })
+    } finally {
+      setVerifying(false)
+    }
   }
 
   if (!isOpen) return null
@@ -295,6 +323,12 @@ function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModal
             />
           </div>
 
+          {verifyResult && (
+            <div className={`rounded-md px-3 py-2 text-sm ${verifyResult.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              {verifyResult.message}
+            </div>
+          )}
+
           <div>
             <label htmlFor="pin" className="block text-sm font-medium text-gray-700 mb-1">
               PIN
@@ -310,7 +344,14 @@ function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModal
             />
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-2 flex-wrap">
+            <button
+              onClick={handleVerify}
+              disabled={verifying}
+              className={`bg-emerald-600 text-white py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${verifying ? 'opacity-60 cursor-not-allowed' : 'hover:bg-emerald-700'}`}
+            >
+              {verifying ? 'Verifying…' : 'Verify'}
+            </button>
             <button
               onClick={handleSave}
               className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"

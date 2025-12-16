@@ -58,6 +58,58 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/auth/verify
+ * Verifies library card and PIN by performing the HTTP auth flow without booking
+ * Returns success/failure without persisting any session state
+ */
+router.post('/verify', async (req: Request, res: Response) => {
+  console.log('[AUTH ROUTE] ========================================');
+  console.log('[AUTH ROUTE] POST /api/auth/verify received');
+  console.log('[AUTH ROUTE] Request body:', { ...req.body, pin: '****' });
+
+  try {
+    const { libraryCard, pin }: { libraryCard: string; pin: string } = req.body;
+
+    if (!libraryCard || !pin) {
+      return res.status(400).json({
+        success: false,
+        error: 'Library card and PIN are required'
+      });
+    }
+
+    console.log('[AUTH ROUTE] Verifying credentials via HTTP auth');
+    const result = await httpAuthService.login({ libraryCard, pin });
+
+    if (!result.success) {
+      console.log('[AUTH ROUTE] Verification failed');
+      return res.status(401).json({ success: false, error: result.error || 'Invalid credentials' });
+    }
+
+    // Clean up temporary session if one was created
+    if (result.sessionId) {
+      try {
+        httpAuthService.deleteSession(result.sessionId);
+      } catch (e) {
+        // noop
+      }
+    }
+
+    console.log('[AUTH ROUTE] Verification succeeded');
+    return res.json({
+      success: true,
+      libraryCard,
+      verifiedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[AUTH ROUTE] Verify error caught:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Verification failed'
+    });
+  }
+});
+
+/**
  * POST /api/auth/logout
  * Logout and destroy session
  */
