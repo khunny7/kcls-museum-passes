@@ -19,7 +19,8 @@
     "copy:web": "rm -rf apps/api/public && mkdir -p apps/api/public && cp -r apps/web/dist/* apps/api/public",
     "build:prod": "npm run build:web && npm run copy:web && npm run build:api",
     "start:prod": "NODE_ENV=production node apps/api/dist/index.js",
-    "serve": "npm run build:prod && npm run start:prod"
+    "serve": "npm run build:prod && npm run start:prod",
+    "deploy:local": "npm run build:prod && sudo systemctl restart kcls-museum.service"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
