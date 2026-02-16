@@ -5,19 +5,22 @@ import { PassesByDatePage } from './pages/PassesByDatePage'
 import { ScheduledBookingsPage } from './pages/ScheduledBookingsPage'
 import { Layout } from './components/Layout'
 import { AuthProvider } from './contexts/AuthContext'
+import { LibrarySystemProvider } from './contexts/LibrarySystemContext'
 
 function App() {
   return (
-    <AuthProvider>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<PassesListPage />} />
-          <Route path="/by-date" element={<PassesByDatePage />} />
-          <Route path="/pass/:id" element={<PassDetailPage />} />
-          <Route path="/scheduled" element={<ScheduledBookingsPage />} />
-        </Routes>
-      </Layout>
-    </AuthProvider>
+    <LibrarySystemProvider>
+      <AuthProvider>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<PassesListPage />} />
+            <Route path="/by-date" element={<PassesByDatePage />} />
+            <Route path="/pass/:id" element={<PassDetailPage />} />
+            <Route path="/scheduled" element={<ScheduledBookingsPage />} />
+          </Routes>
+        </Layout>
+      </AuthProvider>
+    </LibrarySystemProvider>
   )
 }
 

@@ -1,12 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { schedulerService } from '../services/scheduler.js';
+import { parseLibrarySystem } from '../services/library-system.js';
 
 export const schedulerRouter = Router();
 
 // POST /api/scheduler/schedule - Schedule a future booking
 schedulerRouter.post('/schedule', async (req: Request, res: Response) => {
   try {
-    const { museumId, date, passId, credentials, digital, physical, location, customScheduledTime } = req.body;
+    const { museumId, date, passId, credentials, digital, physical, location, customScheduledTime, system } = req.body;
 
     if (!museumId || !date || !passId || !credentials) {
       return res.status(400).json({
@@ -30,7 +31,8 @@ schedulerRouter.post('/schedule', async (req: Request, res: Response) => {
       digital !== false,
       physical === true,
       location || '0',
-      customScheduledTime // Pass the custom time to the scheduler
+      customScheduledTime,
+      parseLibrarySystem(system)
     );
 
     res.json({
@@ -55,11 +57,13 @@ schedulerRouter.post('/schedule', async (req: Request, res: Response) => {
 // GET /api/scheduler/bookings - Get all scheduled bookings
 schedulerRouter.get('/bookings', (req: Request, res: Response) => {
   try {
-    const bookings = schedulerService.getAllScheduledBookings();
+    const system = parseLibrarySystem(req.query.system);
+    const bookings = schedulerService.getAllScheduledBookings(system);
     
     // Include credentials in response
     const sanitized = bookings.map(b => ({
       id: b.id,
+      system: b.system,
       museumId: b.museumId,
       date: b.date,
       passId: b.passId,
@@ -100,6 +104,7 @@ schedulerRouter.get('/bookings/:id', (req: Request, res: Response) => {
     // Remove sensitive credentials
     const sanitized = {
       id: booking.id,
+      system: booking.system,
       museumId: booking.museumId,
       date: booking.date,
       passId: booking.passId,
@@ -195,7 +200,8 @@ schedulerRouter.delete('/bookings/:id/remove', (req: Request, res: Response) => 
 // GET /api/scheduler/jobs - Get all active scheduled jobs (cron jobs)
 schedulerRouter.get('/jobs', (req: Request, res: Response) => {
   try {
-    const jobs = schedulerService.getActiveJobs();
+    const system = parseLibrarySystem(req.query.system);
+    const jobs = schedulerService.getActiveJobs(system);
 
     res.json({
       success: true,

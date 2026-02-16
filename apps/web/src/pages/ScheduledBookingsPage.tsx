@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useLibrarySystem } from '../contexts/LibrarySystemContext'
 
 interface ScheduledBooking {
   id: string
@@ -37,8 +38,8 @@ interface Museum {
   }
 }
 
-async function fetchScheduledBookings(): Promise<ScheduledBooking[]> {
-  const response = await fetch('/api/scheduler/bookings')
+async function fetchScheduledBookings(system: string): Promise<ScheduledBooking[]> {
+  const response = await fetch(`/api/scheduler/bookings?system=${system}`)
   if (!response.ok) {
     throw new Error('Failed to fetch scheduled bookings')
   }
@@ -46,8 +47,8 @@ async function fetchScheduledBookings(): Promise<ScheduledBooking[]> {
   return data.bookings || []
 }
 
-async function fetchMuseums(): Promise<Museum[]> {
-  const response = await fetch('/api/passes')
+async function fetchMuseums(system: string): Promise<Museum[]> {
+  const response = await fetch(`/api/passes?system=${system}`)
   if (!response.ok) {
     throw new Error('Failed to fetch museums')
   }
@@ -56,8 +57,8 @@ async function fetchMuseums(): Promise<Museum[]> {
   return passes || []
 }
 
-async function fetchActiveJobs(): Promise<ActiveJob[]> {
-  const response = await fetch('/api/scheduler/jobs')
+async function fetchActiveJobs(system: string): Promise<ActiveJob[]> {
+  const response = await fetch(`/api/scheduler/jobs?system=${system}`)
   if (!response.ok) {
     throw new Error('Failed to fetch active jobs')
   }
@@ -101,24 +102,25 @@ async function deleteBooking(id: string): Promise<void> {
 export function ScheduledBookingsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { system } = useLibrarySystem()
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
   const [showActiveJobs, setShowActiveJobs] = useState(false)
 
   const { data: bookings = [], isLoading } = useQuery({
-    queryKey: ['scheduledBookings'],
-    queryFn: fetchScheduledBookings,
+    queryKey: ['scheduledBookings', system],
+    queryFn: () => fetchScheduledBookings(system),
     refetchInterval: 5000 // Refresh every 5 seconds
   })
 
   const { data: museums = [] } = useQuery({
-    queryKey: ['museums'],
-    queryFn: fetchMuseums,
+    queryKey: ['museums', system],
+    queryFn: () => fetchMuseums(system),
     staleTime: 60000 * 5 // Cache for 5 minutes
   })
 
   const { data: activeJobs = [] } = useQuery({
-    queryKey: ['activeJobs'],
-    queryFn: fetchActiveJobs,
+    queryKey: ['activeJobs', system],
+    queryFn: () => fetchActiveJobs(system),
     refetchInterval: 5000 // Refresh every 5 seconds
   })
 

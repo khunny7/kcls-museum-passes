@@ -1,23 +1,35 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { useLibrarySystem } from '../contexts/LibrarySystemContext'
+import { LIBRARY_SYSTEM_LABELS, STORAGE_KEYS, SYSTEM_THEMES, type LibrarySystem } from '../utils/librarySystem'
 
 interface LayoutProps {
   children: React.ReactNode
 }
 
-const CREDENTIALS_STORAGE_KEY = 'kcls_credentials'
-
 export function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { system, setSystem } = useLibrarySystem()
   const [showCredentialsModal, setShowCredentialsModal] = useState(false)
   const [hasCredentials, setHasCredentials] = useState(false)
 
-  // Check if credentials exist on mount
+  const credentialsKey = STORAGE_KEYS.credentials(system)
+  const theme = SYSTEM_THEMES[system]
+
+  // Check if credentials exist on mount and when system changes
   useEffect(() => {
-    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    const stored = localStorage.getItem(credentialsKey)
     setHasCredentials(!!stored)
-  }, [])
+  }, [credentialsKey])
+
+  const handleSystemChange = (newSystem: LibrarySystem) => {
+    setSystem(newSystem)
+    // Invalidate all cached queries so data refreshes for the new system
+    queryClient.invalidateQueries()
+  }
 
   const navItems = [
     {
@@ -80,21 +92,21 @@ export function Layout({ children }: LayoutProps) {
   
   return (
     <div className="relative min-h-screen overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-36 left-1/2 h-96 w-[36rem] -translate-x-1/2 rounded-full bg-gradient-to-br from-blue-300 via-sky-200 to-indigo-200 opacity-60 blur-3xl" />
-        <div className="absolute -bottom-40 left-8 h-96 w-96 rounded-full bg-blue-200 opacity-70 blur-3xl" />
-        <div className="absolute right-0 top-10 h-80 w-72 rounded-full bg-indigo-200 opacity-70 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 -z-10 transition-colors duration-500">
+        <div className={`absolute -top-36 left-1/2 h-96 w-[36rem] -translate-x-1/2 rounded-full bg-gradient-to-br ${theme.blob1} opacity-60 blur-3xl transition-colors duration-500`} />
+        <div className={`absolute -bottom-40 left-8 h-96 w-96 rounded-full ${theme.blob2} opacity-70 blur-3xl transition-colors duration-500`} />
+        <div className={`absolute right-0 top-10 h-80 w-72 rounded-full ${theme.blob3} opacity-70 blur-3xl transition-colors duration-500`} />
       </div>
 
       <header className="sticky top-0 z-30 flex justify-center py-6">
         <div className="w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between rounded-3xl bg-white/80 px-6 py-3 shadow-xl ring-1 ring-white/50 backdrop-blur">
+          <div className={`flex items-center justify-between rounded-3xl bg-white/80 px-6 py-3 shadow-xl ring-1 ${theme.headerRing} backdrop-blur transition-all duration-500`}>
             <button
               type="button"
               onClick={() => navigate('/')}
               className="flex items-center gap-2 text-left"
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 via-sky-500 to-indigo-500 text-white shadow-lg">
+              <span className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${theme.iconGradient} text-white shadow-lg transition-colors duration-500`}>
                 <svg
                   className="h-5 w-5"
                   viewBox="0 0 24 24"
@@ -110,8 +122,8 @@ export function Layout({ children }: LayoutProps) {
                 </svg>
               </span>
               <div>
-                <span className="block text-xs font-semibold uppercase tracking-wide text-blue-600">Piano8283 Studio</span>
-                <span className="text-lg font-semibold text-slate-900">KCLS Museum Pass Helper</span>
+                <span className={`block text-xs font-semibold uppercase tracking-wide ${theme.studioLabel} transition-colors duration-500`}>Piano8283 Studio</span>
+                <span className="text-lg font-semibold text-slate-900">Museum Pass Helper</span>
               </div>
             </button>
 
@@ -122,9 +134,9 @@ export function Layout({ children }: LayoutProps) {
                   <Link
                     key={item.to}
                     to={item.to}
-                    className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                    className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium transition-all duration-300 ${
                       active
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                        ? `${theme.navActive} text-white shadow-lg ${theme.navActiveShadow}`
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
@@ -141,12 +153,21 @@ export function Layout({ children }: LayoutProps) {
             </div>
 
             <div className="flex items-center gap-3">
+              <select
+                value={system}
+                onChange={(e) => handleSystemChange(e.target.value as LibrarySystem)}
+                className={`rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm backdrop-blur transition ${theme.selectFocus} focus:outline-none focus:ring-2 ${theme.selectFocusRing}`}
+              >
+                {(Object.entries(LIBRARY_SYSTEM_LABELS) as [LibrarySystem, string][]).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
               <button
                 onClick={() => setShowCredentialsModal(true)}
-                className={`rounded-2xl px-4 py-2 text-sm font-semibold shadow-lg transition hover:-translate-y-0.5 ${
+                className={`rounded-2xl px-4 py-2 text-sm font-semibold shadow-lg transition-all duration-300 hover:-translate-y-0.5 ${
                   hasCredentials
                     ? 'bg-emerald-600 text-white shadow-emerald-500/20 hover:bg-emerald-700'
-                    : 'bg-blue-600 text-white shadow-blue-500/20 hover:bg-blue-700'
+                    : `${theme.credBtn} text-white ${theme.credBtnShadow} ${theme.credBtnHover}`
                 }`}
               >
                 {hasCredentials ? (
@@ -201,6 +222,8 @@ export function Layout({ children }: LayoutProps) {
         onClose={() => setShowCredentialsModal(false)}
         onSave={() => setHasCredentials(true)}
         onClear={() => setHasCredentials(false)}
+        credentialsKey={credentialsKey}
+        system={system}
       />
     </div>
   )
@@ -211,23 +234,29 @@ interface CredentialsModalProps {
   onClose: () => void
   onSave: () => void
   onClear: () => void
+  credentialsKey: string
+  system: LibrarySystem
 }
 
-function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModalProps) {
+function CredentialsModal({ isOpen, onClose, onSave, onClear, credentialsKey, system }: CredentialsModalProps) {
   const [libraryCard, setLibraryCard] = useState('')
   const [pin, setPin] = useState('')
+  const [email, setEmail] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<null | { ok: boolean; message: string }>(null)
+
+  const needsEmail = system === 'seattle'
 
   useEffect(() => {
     if (isOpen) {
       // Load existing credentials when modal opens
-      const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+      const stored = localStorage.getItem(credentialsKey)
       if (stored) {
         try {
           const parsed = JSON.parse(stored)
           setLibraryCard(parsed.libraryCard || '')
           setPin(parsed.pin || '')
+          setEmail(parsed.email || '')
         } catch (e) {
           // Invalid stored data
         }
@@ -240,20 +269,29 @@ function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModal
       alert('Please enter both library card number and PIN')
       return
     }
+    if (needsEmail && !email.trim()) {
+      alert('Please enter your email address (required for Seattle Public Library bookings)')
+      return
+    }
 
-    localStorage.setItem(CREDENTIALS_STORAGE_KEY, JSON.stringify({
+    const creds: Record<string, string> = {
       libraryCard: libraryCard.trim(),
       pin: pin.trim()
-    }))
+    }
+    if (needsEmail) {
+      creds.email = email.trim()
+    }
+    localStorage.setItem(credentialsKey, JSON.stringify(creds))
 
     onSave()
     onClose()
   }
 
   const handleClear = () => {
-    localStorage.removeItem(CREDENTIALS_STORAGE_KEY)
+    localStorage.removeItem(credentialsKey)
     setLibraryCard('')
     setPin('')
+    setEmail('')
     onClear()
     onClose()
   }
@@ -269,7 +307,7 @@ function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModal
       const res = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ libraryCard: libraryCard.trim(), pin: pin.trim() })
+        body: JSON.stringify({ libraryCard: libraryCard.trim(), pin: pin.trim(), system })
       })
       const data = await res.json()
       if (res.ok && data.success) {
@@ -343,6 +381,24 @@ function CredentialsModal({ isOpen, onClose, onSave, onClear }: CredentialsModal
               autoComplete="current-password"
             />
           </div>
+
+          {needsEmail && (
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+                <span className="ml-1 text-xs text-amber-600 font-normal">(required for Seattle)</span>
+              </label>
+              <input
+                type="email"
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email address"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoComplete="email"
+              />
+            </div>
+          )}
 
           <div className="flex gap-3 pt-2 flex-wrap">
             <button

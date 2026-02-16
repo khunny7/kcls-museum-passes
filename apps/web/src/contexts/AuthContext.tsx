@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import axios from 'axios';
+import { useLibrarySystem } from './LibrarySystemContext';
+import { STORAGE_KEYS } from '../utils/librarySystem';
 
 interface AuthSession {
   sessionId: string;
@@ -17,21 +19,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const SESSION_STORAGE_KEY = 'kcls_auth_session';
-
 interface AuthProviderProps {
   children: ReactNode;
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const { system } = useLibrarySystem();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load session from localStorage on mount
+  const sessionKey = STORAGE_KEYS.authSession(system);
+
+  // Load session from localStorage on mount and when system changes
   useEffect(() => {
     const loadSession = () => {
       try {
-        const storedSession = localStorage.getItem(SESSION_STORAGE_KEY);
+        const storedSession = localStorage.getItem(sessionKey);
         if (storedSession) {
           const parsed = JSON.parse(storedSession) as AuthSession;
           
@@ -40,19 +43,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setSession(parsed);
           } else {
             // Clean up expired session
-            localStorage.removeItem(SESSION_STORAGE_KEY);
+            localStorage.removeItem(sessionKey);
+            setSession(null);
           }
+        } else {
+          setSession(null);
         }
       } catch (error) {
         console.error('Failed to load session:', error);
-        localStorage.removeItem(SESSION_STORAGE_KEY);
+        localStorage.removeItem(sessionKey);
+        setSession(null);
       } finally {
         setLoading(false);
       }
     };
 
     loadSession();
-  }, []);
+  }, [sessionKey]);
 
   // Auto-logout when session expires
   useEffect(() => {
@@ -78,6 +85,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         libraryCard,
         pin,
         bookingUrl,
+        system,
       });
 
       if (response.data.success) {
@@ -88,7 +96,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         };
 
         setSession(newSession);
-        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(newSession));
+        localStorage.setItem(sessionKey, JSON.stringify(newSession));
 
         return { success: true, sessionId: response.data.sessionId };
       } else {
@@ -109,11 +117,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = () => {
     if (session) {
       // Call logout API
-      axios.post('/api/auth/logout', { sessionId: session.sessionId }).catch(console.error);
+      axios.post('/api/auth/logout', { sessionId: session.sessionId, system }).catch(console.error);
     }
 
     setSession(null);
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(sessionKey);
   };
 
   const value: AuthContextType = {

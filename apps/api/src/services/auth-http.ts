@@ -4,6 +4,7 @@ import { CookieJar, Cookie } from 'tough-cookie';
 // where cookies get stored with incorrect paths (including query strings)
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
+import { LibrarySystemConfig, SYSTEM_CONFIG } from './library-system.js';
 
 export interface AuthCredentials {
   libraryCard: string;
@@ -28,9 +29,6 @@ export interface HttpAuthResponse {
   error?: string;
 }
 
-// Store active sessions in memory (in production, use Redis or similar)
-const httpSessions = new Map<string, HttpAuthSession>();
-
 /**
  * HTTP-based authentication service that replaces Puppeteer browser automation
  * Uses axios with cookie jar support to maintain session across requests
@@ -42,12 +40,15 @@ const httpSessions = new Map<string, HttpAuthSession>();
  * 4. POST form_login with credentials -> 303 redirect back to booking with token
  */
 class HttpAuthService {
-  private readonly AUTH_POST_URL = 'https://libauth.com/form_login';
-  private readonly AUTH_ID = '1963';
-  private readonly LOGIN_CALLBACK_URL = 'https://kcls.libapps.com/libapps/libauth?auth_id=1963';
   private readonly SESSION_DURATION = 2 * 60 * 60 * 1000; // 2 hours
+  private readonly config: LibrarySystemConfig;
+  private readonly sessions: Map<string, HttpAuthSession> = new Map();
 
   private readonly USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+  constructor(config: LibrarySystemConfig) {
+    this.config = config;
+  }
 
   /**
    * Create a configured axios client (without cookie jar wrapper)
@@ -166,20 +167,24 @@ class HttpAuthService {
   }
 
   /**
-   * Authenticate with KCLS library card using pure HTTP requests
-   * This uses a default museum booking page to trigger the auth flow
+   * Authenticate with a default or provided booking URL
    * For specific bookings, use loginForBooking() instead
    */
-  async login(credentials: AuthCredentials): Promise<HttpAuthResponse> {
+  async login(credentials: AuthCredentials, bookingUrl?: string): Promise<HttpAuthResponse> {
     console.log('[HttpAuth] Starting HTTP-based authentication (using default booking page)...');
-    
-    // Use a valid booking URL that triggers authentication
-    // The /book endpoint requires auth, so it redirects to login
-    // Using MOPOP museum ID: 33c1f0af9b02
-    const today = new Date().toISOString().split('T')[0];
-    const defaultBookingUrl = `https://rooms.kcls.org/passes/33c1f0af9b02/book?date=${today}&pass=anypass&digital=1&physical=0&location=0`;
-    
-    return this.loginForBooking(credentials, defaultBookingUrl);
+
+    const url = bookingUrl || this.getDefaultBookingUrl();
+    if (!url) {
+      return {
+        success: false,
+        sessionId: '',
+        expiresAt: 0,
+        libraryCard: credentials.libraryCard,
+        error: 'No default booking URL available for this system'
+      };
+    }
+
+    return this.loginForBooking(credentials, url);
   }
 
   /**
@@ -282,9 +287,9 @@ class HttpAuthService {
       }
 
       // Log cookies after loading form
-      const cookiesAfterForm = await jar.getCookies('https://kcls.libapps.com/');
+      const cookiesAfterForm = await jar.getCookies(new URL(this.config.loginCallbackUrl).origin + '/');
       const libAuthCookies = await jar.getCookies('https://libauth.com/');
-      console.log('[HttpAuth] KCLS cookies:', cookiesAfterForm.map(c => c.key).join(', '));
+      console.log(`[HttpAuth] ${this.config.id} cookies:`, cookiesAfterForm.map(c => c.key).join(', '));
       console.log('[HttpAuth] LibAuth cookies:', libAuthCookies.map(c => c.key).join(', '));
 
       // Step 3: POST credentials to libauth.com/form_login
@@ -293,16 +298,16 @@ class HttpAuthService {
       // The login_url parameter must be the libapps callback URL
       // This is where libauth.com redirects after successful auth
       // The callback then redirects to the original booking URL with the token
-      const loginCallbackUrl = `https://kcls.libapps.com/libapps/libauth?auth_id=${this.AUTH_ID}`;
+      const loginCallbackUrl = this.config.loginCallbackUrl;
       
       console.log('[HttpAuth] Using login_url:', loginCallbackUrl);
       
-      const postBody = `auth_id=${this.AUTH_ID}&login_url=${encodeURIComponent(loginCallbackUrl)}&username=${encodeURIComponent(credentials.libraryCard)}&password=${encodeURIComponent(credentials.pin)}`;
+      const postBody = `auth_id=${this.config.authId}&login_url=${encodeURIComponent(loginCallbackUrl)}&username=${encodeURIComponent(credentials.libraryCard)}&password=${encodeURIComponent(credentials.pin)}`;
       
       console.log('[HttpAuth] POST body (full):', postBody);
 
       // Get cookies for the POST request
-      const postCookies = await this.getCookieHeader(jar, this.AUTH_POST_URL);
+      const postCookies = await this.getCookieHeader(jar, this.config.authPostUrl);
       console.log('[HttpAuth] ===== COOKIES FOR POST =====');
       console.log('[HttpAuth] Cookie header length:', postCookies ? postCookies.length : 0);
       console.log('[HttpAuth] Full cookie string:');
@@ -322,7 +327,7 @@ class HttpAuthService {
         ...this.getBaseHeaders(),
         'Content-Type': 'application/x-www-form-urlencoded',
         'Content-Length': postBody.length.toString(),
-        'Origin': 'https://kcls.libapps.com',
+        'Origin': new URL(this.config.loginCallbackUrl).origin,
         'Referer': formUrl,
         'Cache-Control': 'max-age=0',
         'sec-fetch-dest': 'document',
@@ -343,7 +348,7 @@ class HttpAuthService {
       }
       console.log('[HttpAuth] ===== END HEADERS =====');
 
-      const authResponse = await client.post(this.AUTH_POST_URL, postBody, {
+      const authResponse = await client.post(this.config.authPostUrl, postBody, {
         headers: postHeaders,
       });
       
@@ -356,7 +361,7 @@ class HttpAuthService {
       console.log('[HttpAuth] ===== END RESPONSE =====');
       
       // Store cookies from auth response
-      await this.storeCookiesFromResponse(jar, authResponse, this.AUTH_POST_URL);
+      await this.storeCookiesFromResponse(jar, authResponse, this.config.authPostUrl);
 
       // Check for redirect with token
       if (authResponse.status === 303 && authResponse.headers.location) {
@@ -388,7 +393,7 @@ class HttpAuthService {
             bookingUrl: redirectUrl, // Store the full booking URL with token
           };
 
-          httpSessions.set(sessionId, session);
+          this.sessions.set(sessionId, session);
 
           // Log all cookies we have now
           const allCookies = await this.getAllCookiesFromJar(jar);
@@ -449,7 +454,7 @@ class HttpAuthService {
                 bookingUrl: finalUrl,
               };
 
-              httpSessions.set(sessionId, session);
+              this.sessions.set(sessionId, session);
 
               return {
                 success: true,
@@ -520,14 +525,14 @@ class HttpAuthService {
    * Get a session by ID
    */
   getSession(sessionId: string): HttpAuthSession | null {
-    const session = httpSessions.get(sessionId);
+    const session = this.sessions.get(sessionId);
     if (!session) {
       return null;
     }
 
     // Check if session expired
     if (Date.now() > session.expiresAt) {
-      httpSessions.delete(sessionId);
+      this.sessions.delete(sessionId);
       return null;
     }
 
@@ -538,21 +543,21 @@ class HttpAuthService {
    * Get all active sessions (for debugging)
    */
   getAllSessions(): Map<string, HttpAuthSession> {
-    return httpSessions;
+    return this.sessions;
   }
 
   /**
    * Delete a session
    */
   deleteSession(sessionId: string): boolean {
-    return httpSessions.delete(sessionId);
+    return this.sessions.delete(sessionId);
   }
 
   /**
    * Logout and destroy session
    */
   logout(sessionId: string): boolean {
-    return httpSessions.delete(sessionId);
+    return this.sessions.delete(sessionId);
   }
 
   /**
@@ -560,9 +565,9 @@ class HttpAuthService {
    */
   cleanupExpiredSessions(): void {
     const now = Date.now();
-    for (const [sessionId, session] of httpSessions.entries()) {
+    for (const [sessionId, session] of this.sessions.entries()) {
       if (now > session.expiresAt) {
-        httpSessions.delete(sessionId);
+        this.sessions.delete(sessionId);
         console.log(`[HttpAuth] Cleaned up expired session: ${sessionId}`);
       }
     }
@@ -607,15 +612,27 @@ class HttpAuthService {
       'sec-ch-ua-platform': '"Windows"',
     };
   }
+
+  getDefaultBookingUrl(date?: string): string | null {
+    const targetDate = date || new Date().toISOString().split('T')[0];
+    const path = this.config.defaultBookingPath(targetDate);
+    if (!path) {
+      return null;
+    }
+    return new URL(path, this.config.baseUrl).toString();
+  }
 }
 
-// Export singleton instance
-export const httpAuthService = new HttpAuthService();
+const authServices: Record<'kcls' | 'seattle', HttpAuthService> = {
+  kcls: new HttpAuthService(SYSTEM_CONFIG.kcls),
+  seattle: new HttpAuthService(SYSTEM_CONFIG.seattle)
+};
 
-// Export the sessions map for use by booking service
-export { httpSessions };
+export function getAuthService(system: 'kcls' | 'seattle'): HttpAuthService {
+  return authServices[system] || authServices.kcls;
+}
 
 // Cleanup expired sessions every 15 minutes
 setInterval(() => {
-  httpAuthService.cleanupExpiredSessions();
+  Object.values(authServices).forEach(service => service.cleanupExpiredSessions());
 }, 15 * 60 * 1000);

@@ -1,10 +1,15 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { PassesService } from '../services/passes.js';
-import { httpBookingService } from '../services/booking-http.js';
+import { getPassesService } from '../services/passes.js';
+import { getBookingService } from '../services/booking-http.js';
+import { parseLibrarySystem } from '../services/library-system.js';
 
 export const passesRouter = Router();
-const passesService = new PassesService();
+
+const getSystemFromRequest = (req: Request) => {
+  const raw = (req.query.system ?? req.body?.system) as unknown;
+  return parseLibrarySystem(raw);
+};
 
 // Ensure no downstream caching of passes data or availability responses
 passesRouter.use((req, res, next) => {
@@ -18,6 +23,8 @@ passesRouter.use((req, res, next) => {
 // GET /api/passes - List all available passes
 passesRouter.get('/', async (req: Request, res: Response) => {
   try {
+    const system = getSystemFromRequest(req);
+    const passesService = getPassesService(system);
     const passes = await passesService.getAllPasses();
     res.json(passes);
   } catch (error) {
@@ -29,6 +36,8 @@ passesRouter.get('/', async (req: Request, res: Response) => {
 // GET /api/passes/by-date - Get all available passes for a specific date
 passesRouter.get('/by-date', async (req: Request, res: Response) => {
   try {
+    const system = getSystemFromRequest(req);
+    const passesService = getPassesService(system);
     const { date, digital = 'true', physical = 'false', location = '0' } = req.query;
     
     if (!date || typeof date !== 'string') {
@@ -52,6 +61,8 @@ passesRouter.get('/by-date', async (req: Request, res: Response) => {
 // GET /api/passes/:id - Get pass details
 passesRouter.get('/:id', async (req: Request, res: Response) => {
   try {
+    const system = getSystemFromRequest(req);
+    const passesService = getPassesService(system);
     const pass = await passesService.getPassDetails(req.params.id);
     if (!pass) {
       return res.status(404).json({ error: 'Pass not found' });
@@ -66,6 +77,8 @@ passesRouter.get('/:id', async (req: Request, res: Response) => {
 // GET /api/passes/:id/availability - Get pass availability
 passesRouter.get('/:id/availability', async (req: Request, res: Response) => {
   try {
+    const system = getSystemFromRequest(req);
+    const passesService = getPassesService(system);
     const { date, digital = 'true', physical = 'false', location = '0' } = req.query;
     
     if (!date || typeof date !== 'string') {
@@ -90,6 +103,8 @@ passesRouter.get('/:id/availability', async (req: Request, res: Response) => {
 // POST /api/passes/:id/book - Book a pass
 passesRouter.post('/:id/book', async (req: Request, res: Response) => {
   try {
+    const system = getSystemFromRequest(req);
+    const bookingService = getBookingService(system);
     const { date, passId, digital, physical, location, sessionId, credentials } = req.body;
     
     if (!date || !passId) {
@@ -107,8 +122,8 @@ passesRouter.post('/:id/book', async (req: Request, res: Response) => {
 
     // Option 1: Credentials provided - use unified login+book flow (recommended)
     if (credentials?.libraryCard && credentials?.pin) {
-      const booking = await httpBookingService.bookWithCredentials(
-        { libraryCard: credentials.libraryCard, pin: credentials.pin },
+      const booking = await bookingService.bookWithCredentials(
+        { libraryCard: credentials.libraryCard, pin: credentials.pin, email: credentials.email },
         bookingRequest
       );
       return res.json(booking);
@@ -116,7 +131,7 @@ passesRouter.post('/:id/book', async (req: Request, res: Response) => {
 
     // Option 2: SessionId provided - use existing session (legacy support)
     if (sessionId) {
-      const booking = await httpBookingService.bookPass(sessionId, bookingRequest);
+      const booking = await bookingService.bookPass(sessionId, bookingRequest);
       return res.json(booking);
     }
 

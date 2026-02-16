@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { AvailabilityCalendar } from '../components/AvailabilityCalendar'
+import { useLibrarySystem } from '../contexts/LibrarySystemContext'
+import type { LibrarySystem } from '../utils/librarySystem'
 
 interface MuseumMetadata {
   id: string
@@ -24,8 +26,8 @@ interface PassDetails {
   metadata?: MuseumMetadata
 }
 
-async function fetchPassDetails(id: string): Promise<PassDetails> {
-  const response = await fetch(`/api/passes/${id}`)
+async function fetchPassDetails(id: string, system: LibrarySystem): Promise<PassDetails> {
+  const response = await fetch(`/api/passes/${id}?system=${system}`)
   if (!response.ok) {
     throw new Error('Failed to fetch pass details')
   }
@@ -35,11 +37,12 @@ async function fetchPassDetails(id: string): Promise<PassDetails> {
 export function PassDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { system } = useLibrarySystem()
   const [selectedDate, setSelectedDate] = useState<string>('')
 
   const { data: pass, isLoading, error } = useQuery({
-    queryKey: ['pass', id],
-    queryFn: () => fetchPassDetails(id!),
+    queryKey: ['pass', id, system],
+    queryFn: () => fetchPassDetails(id!, system),
     enabled: !!id,
   })
 

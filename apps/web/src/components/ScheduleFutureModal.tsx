@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { SYSTEM_SCHEDULE, type LibrarySystem } from '../utils/librarySystem'
 
 interface ScheduleFutureModalProps {
   isOpen: boolean
@@ -8,6 +10,7 @@ interface ScheduleFutureModalProps {
   museumId: string
   passName?: string
   isLoading?: boolean
+  system?: LibrarySystem
 }
 
 export function ScheduleFutureModal({ 
@@ -17,26 +20,28 @@ export function ScheduleFutureModal({
   date, 
   museumId, 
   passName, 
-  isLoading 
+  isLoading,
+  system = 'kcls'
 }: ScheduleFutureModalProps) {
   const [customTime, setCustomTime] = useState('')
   const [useCustomTime, setUseCustomTime] = useState(false)
 
-  // Calculate the scheduled time (14 days before at 2pm PST)
+  const schedule = SYSTEM_SCHEDULE[system]
+
+  // Calculate the scheduled time using per-system config
   const calculateScheduledTime = () => {
     const [year, month, day] = date.split('-').map(Number)
     
-    // Calculate the date 14 days before
+    // Calculate the date N days before (per system config)
     const targetDate = new Date(year, month - 1, day)
-    targetDate.setDate(targetDate.getDate() - 14)
+    targetDate.setDate(targetDate.getDate() - schedule.advanceDays)
     
     const pstYear = targetDate.getFullYear()
     const pstMonth = targetDate.getMonth()
     const pstDay = targetDate.getDate()
     
-    // Create UTC date for 2pm PST (which is 10pm UTC / 22:00 UTC)
-    // PST is UTC-8, so 2pm PST = 22:00 UTC
-    const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, 22, 0, 0, 0))
+    // Create UTC date at the system's opening hour
+    const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, schedule.openHourUTC, 0, 0, 0))
     
     return utcDate
   }
@@ -109,8 +114,8 @@ export function ScheduleFutureModal({
 
   const isValidCustomTime = useCustomTime ? customTime !== '' : true
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-50">
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
@@ -118,7 +123,8 @@ export function ScheduleFutureModal({
       />
       
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
         <div 
           className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full transform transition-all"
           onClick={(e) => e.stopPropagation()}
@@ -206,7 +212,7 @@ export function ScheduleFutureModal({
                     <p className="text-sm font-medium text-gray-700 mb-1">Scheduled Execution Time</p>
                     <p className="text-lg font-semibold text-gray-900">{formattedScheduledTime}</p>
                     <p className="text-xs text-gray-500 mt-1">
-                      Runs 14 days before target date at 2pm PST
+                      Runs {schedule.advanceDays} days before target date at {schedule.openTimeLabel}
                     </p>
                   </div>
 
@@ -294,7 +300,9 @@ export function ScheduleFutureModal({
             </button>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

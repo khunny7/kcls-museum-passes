@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { PassCard } from '../components/PassCard'
+import { useLibrarySystem } from '../contexts/LibrarySystemContext'
+import type { LibrarySystem } from '../utils/librarySystem'
 
 interface Pass {
   id: string
@@ -10,8 +12,8 @@ interface Pass {
   available: boolean
 }
 
-async function fetchPasses(): Promise<Pass[]> {
-  const response = await fetch('/api/passes')
+async function fetchPasses(system: LibrarySystem): Promise<Pass[]> {
+  const response = await fetch(`/api/passes?system=${system}`)
   if (!response.ok) {
     throw new Error('Failed to fetch passes')
   }
@@ -19,9 +21,11 @@ async function fetchPasses(): Promise<Pass[]> {
 }
 
 export function PassesListPage() {
+  const { system, label } = useLibrarySystem()
+
   const { data: passes, isLoading, error } = useQuery({
-    queryKey: ['passes'],
-    queryFn: fetchPasses,
+    queryKey: ['passes', system],
+    queryFn: () => fetchPasses(system),
   })
 
   if (isLoading) {
@@ -51,7 +55,7 @@ export function PassesListPage() {
       <div className="mb-8">
         <h2 className="text-3xl font-bold text-gray-900 mb-4">Available Museum Passes</h2>
         <p className="text-lg text-gray-600">
-          Reserve free museum passes with your KCLS library card. Select a museum to see available dates.
+          Reserve free museum passes with your {label} library card. Select a museum to see available dates.
         </p>
       </div>
 

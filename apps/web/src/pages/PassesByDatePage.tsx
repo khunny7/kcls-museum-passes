@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { PassCard } from '../components/PassCard'
+import { useLibrarySystem } from '../contexts/LibrarySystemContext'
+import type { LibrarySystem } from '../utils/librarySystem'
 
 interface Pass {
   id: string
@@ -11,12 +13,13 @@ interface Pass {
   available: boolean
 }
 
-async function fetchPassesByDate(date: string): Promise<Pass[]> {
+async function fetchPassesByDate(date: string, system: LibrarySystem): Promise<Pass[]> {
   const params = new URLSearchParams({
     date,
     digital: 'true',
     physical: 'false',
-    location: '0'
+    location: '0',
+    system
   })
   
   const response = await fetch(`/api/passes/by-date?${params}`, {
@@ -31,6 +34,7 @@ async function fetchPassesByDate(date: string): Promise<Pass[]> {
 export function PassesByDatePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { system } = useLibrarySystem()
   
   // Default to tomorrow's date
   const tomorrow = new Date()
@@ -40,8 +44,8 @@ export function PassesByDatePage() {
   const [selectedDate, setSelectedDate] = useState<string>(defaultDate)
 
   const { data: passes, isLoading, error, refetch } = useQuery({
-    queryKey: ['passesByDate', selectedDate],
-    queryFn: () => fetchPassesByDate(selectedDate),
+    queryKey: ['passesByDate', selectedDate, system],
+    queryFn: () => fetchPassesByDate(selectedDate, system),
     enabled: !!selectedDate,
     staleTime: 0,
     gcTime: 0,

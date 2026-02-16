@@ -3,7 +3,8 @@ import { CookieJar, Cookie } from 'tough-cookie';
 // Note: We don't use axios-cookiejar-support because it has a cookie path bug
 import * as cheerio from 'cheerio';
 import crypto from 'crypto';
-import { httpSessions, HttpAuthSession, httpAuthService } from './auth-http.js';
+import { getAuthService } from './auth-http.js';
+import { LibrarySystemConfig, SYSTEM_CONFIG } from './library-system.js';
 
 export interface BookingRequest {
   museumId: string;
@@ -12,6 +13,7 @@ export interface BookingRequest {
   digital?: boolean;
   physical?: boolean;
   location?: string;
+  email?: string;
 }
 
 export interface BookingResult {
@@ -28,8 +30,14 @@ export interface BookingResult {
  * Performs museum pass bookings using pure HTTP requests
  */
 class HttpBookingService {
-  private readonly BASE_URL = 'https://rooms.kcls.org';
+  private readonly config: LibrarySystemConfig;
+  private readonly authService: ReturnType<typeof getAuthService>;
   private readonly USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+  constructor(config: LibrarySystemConfig) {
+    this.config = config;
+    this.authService = getAuthService(config.id);
+  }
 
   /**
    * Create a configured axios client (without cookie jar wrapper)
@@ -37,7 +45,7 @@ class HttpBookingService {
    */
   private createClient(): AxiosInstance {
     return axios.create({
-      baseURL: this.BASE_URL,
+      baseURL: this.config.baseUrl,
       timeout: 30000,
       maxRedirects: 0,
       validateStatus: () => true,
@@ -90,7 +98,7 @@ class HttpBookingService {
     const digital = request.digital ? '1' : '0';
     const physical = request.physical ? '1' : '0';
     const location = request.location || '0';
-    return `${this.BASE_URL}/passes/${request.museumId}/book?digital=${digital}&physical=${physical}&location=${location}&date=${request.date}&pass=${request.passId}`;
+    return `${this.config.baseUrl}/passes/${request.museumId}/book?digital=${digital}&physical=${physical}&location=${location}&date=${request.date}&pass=${request.passId}`;
   }
 
   /**
@@ -126,7 +134,7 @@ class HttpBookingService {
     console.log('[HttpBooking] Session:', sessionId);
 
     // Get the session
-    const session = httpSessions.get(sessionId);
+    const session = this.authService.getSession(sessionId);
     if (!session) {
       console.log('[HttpBooking] ❌ Session not found');
       return {
@@ -138,7 +146,7 @@ class HttpBookingService {
 
     if (session.expiresAt < Date.now()) {
       console.log('[HttpBooking] ❌ Session expired');
-      httpSessions.delete(sessionId);
+      this.authService.deleteSession(sessionId);
       return {
         success: false,
         requiresAuth: true,
@@ -173,19 +181,19 @@ class HttpBookingService {
       console.log('[HttpBooking] Accessing booking page...');
       
       // Get cookies for the request
-      const bookingCookies = await this.getCookieHeader(jar, `${this.BASE_URL}${finalBookingUrl}`);
+      const bookingCookies = await this.getCookieHeader(jar, `${this.config.baseUrl}${finalBookingUrl}`);
       console.log('[HttpBooking] Cookies for booking page:', bookingCookies ? `${bookingCookies.length} chars` : 'NONE');
       
       const bookingPageResponse = await client.get(finalBookingUrl, {
         headers: {
           ...this.getBaseHeaders(),
-          'Referer': 'https://rooms.kcls.org/passes',
+          'Referer': this.config.refererBase,
           'Cookie': bookingCookies,
         },
       });
       
       // Store any new cookies from response
-      await this.storeCookiesFromResponse(jar, bookingPageResponse, `${this.BASE_URL}${finalBookingUrl}`);
+      await this.storeCookiesFromResponse(jar, bookingPageResponse, `${this.config.baseUrl}${finalBookingUrl}`);
 
       console.log('[HttpBooking] Booking page status:', bookingPageResponse.status);
 
@@ -260,7 +268,7 @@ class HttpBookingService {
               headers: {
                 ...this.getBaseHeaders(),
                 'Content-Type': 'application/x-www-form-urlencoded',
-                'Referer': `${this.BASE_URL}${finalBookingUrl}`,
+                'Referer': `${this.config.baseUrl}${finalBookingUrl}`,
                 'X-Requested-With': 'XMLHttpRequest', // Often needed for AJAX calls
               },
             });
@@ -323,8 +331,14 @@ class HttpBookingService {
         bookingFormData.append('location', location);
       }
 
+      // Seattle requires an email field in the booking form
+      if (request.email && !bookingFormData.has('email')) {
+        bookingFormData.append('email', request.email);
+        console.log('[HttpBooking] Added email field for booking');
+      }
+
       // Get cookies for the submit request
-      const submitCookies = await this.getCookieHeader(jar, `${this.BASE_URL}/passes/${museumId}/book`);
+      const submitCookies = await this.getCookieHeader(jar, `${this.config.baseUrl}/passes/${museumId}/book`);
       console.log('[HttpBooking] Cookies for submit:', submitCookies ? `${submitCookies.length} chars` : 'NONE');
 
       // Submit the booking
@@ -332,14 +346,14 @@ class HttpBookingService {
         headers: {
           ...this.getBaseHeaders(),
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Origin': this.BASE_URL,
-          'Referer': `${this.BASE_URL}${finalBookingUrl}`,
+          'Origin': this.config.baseUrl,
+          'Referer': `${this.config.baseUrl}${finalBookingUrl}`,
           'Cookie': submitCookies,
         },
       });
       
       // Store any new cookies from response
-      await this.storeCookiesFromResponse(jar, submitResponse, `${this.BASE_URL}/passes/${museumId}/book`);
+      await this.storeCookiesFromResponse(jar, submitResponse, `${this.config.baseUrl}/passes/${museumId}/book`);
 
       console.log('[HttpBooking] Submit response status:', submitResponse.status);
 
@@ -392,8 +406,8 @@ class HttpBookingService {
           headers: {
             ...this.getBaseHeaders(),
             'Content-Type': 'application/x-www-form-urlencoded',
-            'Origin': this.BASE_URL,
-            'Referer': `${this.BASE_URL}/passes/${museumId}/book`,
+            'Origin': this.config.baseUrl,
+            'Referer': `${this.config.baseUrl}/passes/${museumId}/book`,
           },
         });
 
@@ -479,7 +493,7 @@ class HttpBookingService {
    * The only difference is WHEN this gets called.
    */
   async bookWithCredentials(
-    credentials: { libraryCard: string; pin: string },
+    credentials: { libraryCard: string; pin: string; email?: string },
     request: BookingRequest,
     logger?: (message: string) => void
   ): Promise<BookingResult> {
@@ -492,7 +506,7 @@ class HttpBookingService {
 
       // Step 2: Login for this specific booking URL
       log('Logging in...');
-      const loginResult = await httpAuthService.loginForBooking(credentials, bookingUrl);
+      const loginResult = await this.authService.loginForBooking(credentials, bookingUrl);
 
       if (!loginResult.success) {
         log(`Login failed: ${loginResult.error}`);
@@ -504,6 +518,14 @@ class HttpBookingService {
 
       log(`Login successful, sessionId: ${loginResult.sessionId}`);
 
+      // Forward email from credentials if not already in request
+      if (credentials.email && !request.email) {
+        request.email = credentials.email;
+        log(`Email from credentials: ${credentials.email}`);
+      } else if (!credentials.email) {
+        log('⚠️ No email in credentials (required for Seattle bookings)');
+      }
+
       // Step 3: Book the pass
       log('Booking pass...');
       const result = await this.bookPass(loginResult.sessionId!, request);
@@ -511,7 +533,7 @@ class HttpBookingService {
       log(`Booking result: ${JSON.stringify(result)}`);
 
       // Step 4: Clean up session
-      httpAuthService.deleteSession(loginResult.sessionId!);
+      this.authService.deleteSession(loginResult.sessionId!);
       log('Session cleaned up');
 
       return result;
@@ -525,5 +547,11 @@ class HttpBookingService {
   }
 }
 
-// Export singleton instance
-export const httpBookingService = new HttpBookingService();
+const bookingServices: Record<'kcls' | 'seattle', HttpBookingService> = {
+  kcls: new HttpBookingService(SYSTEM_CONFIG.kcls),
+  seattle: new HttpBookingService(SYSTEM_CONFIG.seattle)
+};
+
+export function getBookingService(system: 'kcls' | 'seattle'): HttpBookingService {
+  return bookingServices[system] || bookingServices.kcls;
+}

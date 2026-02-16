@@ -1,7 +1,6 @@
 import schedule from 'node-schedule';
-import { PassesService } from './passes.js';
-import { httpAuthService, httpSessions } from './auth-http.js';
-import { httpBookingService } from './booking-http.js';
+import { getBookingService } from './booking-http.js';
+import { DEFAULT_LIBRARY_SYSTEM, LibrarySystem, SYSTEM_CONFIG } from './library-system.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -11,17 +10,19 @@ const __dirname = path.dirname(__filename);
 
 export interface ScheduledBooking {
   id: string;
+  system: LibrarySystem;
   museumId: string;
   date: string; // The date to book (YYYY-MM-DD)
   passId: string;
   credentials: {
     libraryCard: string;
     pin: string;
+    email?: string;
   };
   digital: boolean;
   physical: boolean;
   location: string;
-  scheduledFor: Date; // When to execute the booking (2pm PST on date - 14 days)
+  scheduledFor: Date; // When to execute the booking (per-system: KCLS=14 days @ 2pm PST, Seattle=30 days @ noon PST)
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   createdAt: Date;
   executedAt?: Date;
@@ -33,13 +34,10 @@ export interface ScheduledBooking {
 class SchedulerService {
   private scheduledBookings: Map<string, ScheduledBooking> = new Map();
   private jobs: Map<string, schedule.Job> = new Map();
-  private passesService: PassesService;
   private logsDir: string;
   private defaultLogsDir: string;
 
   constructor() {
-    this.passesService = new PassesService();
-    
     console.log('🔧 Initializing Scheduler Service...');
     console.log('   __dirname:', __dirname);
     console.log('   __filename:', __filename);
@@ -140,29 +138,25 @@ class SchedulerService {
     fs.appendFileSync(logFile, logMessage + '\n');
   }
 
-  private calculateScheduleTime(bookingDate: string): Date {
+  private calculateScheduleTime(bookingDate: string, system: LibrarySystem = DEFAULT_LIBRARY_SYSTEM): Date {
     // Parse the booking date (YYYY-MM-DD)
     const [year, month, day] = bookingDate.split('-').map(Number);
     
-    // Bookings open 14 days before at 2pm PST SHARP
-    // Calculate the date 14 days before
+    // Get per-system scheduling config
+    const config = SYSTEM_CONFIG[system];
+    const advanceDays = config.advanceDays; // KCLS: 14, Seattle: 30
+    const openHourUTC = config.openHourUTC; // KCLS: 22 (2pm PST), Seattle: 20 (noon PST)
+    
+    // Calculate the date N days before the booking date
     const targetDate = new Date(year, month - 1, day);
-    targetDate.setDate(targetDate.getDate() - 14);
-    
-    // We want EXACTLY 2pm PST (14:00:00.000 PST) on that date
-    // PST is UTC-8 (Pacific Standard Time, winter)
-    // PDT is UTC-7 (Pacific Daylight Time, summer)
-    // For now, we'll use PST (UTC-8)
-    
-    // 2pm PST = 10pm UTC (22:00:00.000 UTC)
-    // Using Date.UTC ensures we get the exact millisecond
+    targetDate.setDate(targetDate.getDate() - advanceDays);
     
     const pstYear = targetDate.getFullYear();
     const pstMonth = targetDate.getMonth();
     const pstDay = targetDate.getDate();
     
-    // Create UTC date for EXACTLY 2pm PST (22:00:00.000 UTC)
-    const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, 22, 0, 0, 0));
+    // Create UTC date at the exact opening hour
+    const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, openHourUTC, 0, 0, 0));
     
     return utcDate;
   }
@@ -175,17 +169,19 @@ class SchedulerService {
     digital: boolean = true,
     physical: boolean = false,
     location: string = '0',
-    customScheduledTime?: string // Optional custom time for debugging
+    customScheduledTime?: string, // Optional custom time for debugging
+    system: LibrarySystem = DEFAULT_LIBRARY_SYSTEM
   ): ScheduledBooking {
     const id = `booking_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Use custom time if provided, otherwise calculate
+    // Use custom time if provided, otherwise calculate using per-system schedule
     const scheduledFor = customScheduledTime 
       ? new Date(customScheduledTime) 
-      : this.calculateScheduleTime(date);
+      : this.calculateScheduleTime(date, system);
 
     const booking: ScheduledBooking = {
       id,
+      system,
       museumId,
       date,
       passId,
@@ -288,10 +284,12 @@ class SchedulerService {
       this.log(bookingId, '');
       
       // Use the unified booking method - same code path as regular booking
-      const result = await httpBookingService.bookWithCredentials(
+      const bookingService = getBookingService(booking.system);
+      const result = await bookingService.bookWithCredentials(
         {
           libraryCard: booking.credentials.libraryCard,
           pin: booking.credentials.pin,
+          email: booking.credentials.email,
         },
         {
           museumId: booking.museumId,
@@ -374,8 +372,10 @@ class SchedulerService {
     return this.scheduledBookings.get(id);
   }
 
-  getAllScheduledBookings(): ScheduledBooking[] {
-    return Array.from(this.scheduledBookings.values())
+  getAllScheduledBookings(system?: LibrarySystem): ScheduledBooking[] {
+    const all = Array.from(this.scheduledBookings.values());
+    const filtered = system ? all.filter(b => b.system === system) : all;
+    return filtered
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
@@ -443,14 +443,15 @@ class SchedulerService {
     return true;
   }
 
-  getActiveJobs() {
+  getActiveJobs(system?: LibrarySystem) {
     const activeJobs = [];
     
     for (const [bookingId, job] of this.jobs.entries()) {
       const booking = this.scheduledBookings.get(bookingId);
-      if (booking) {
+      if (booking && (!system || booking.system === system)) {
         activeJobs.push({
           bookingId,
+          system: booking.system,
           museumId: booking.museumId,
           date: booking.date,
           scheduledFor: booking.scheduledFor,
@@ -514,6 +515,7 @@ class SchedulerService {
       for (const b of bookings) {
         const booking: ScheduledBooking = {
           ...b,
+          system: b.system || DEFAULT_LIBRARY_SYSTEM,
           scheduledFor: new Date(b.scheduledFor),
           createdAt: new Date(b.createdAt),
           executedAt: b.executedAt ? new Date(b.executedAt) : undefined,

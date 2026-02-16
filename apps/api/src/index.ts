@@ -41,7 +41,9 @@ app.get('/health', (req, res) => {
 });
 
 // In development, proxy frontend to Vite dev server
-if (process.env.NODE_ENV === 'development') {
+// Treat missing NODE_ENV as development when not on Azure
+const isDev = process.env.NODE_ENV === 'development' || (!IS_AZURE && !IS_PRODUCTION);
+if (isDev) {
   app.use('/', createProxyMiddleware({
     target: 'http://localhost:5173',
     changeOrigin: true,

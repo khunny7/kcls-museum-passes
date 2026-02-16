@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { httpAuthService } from '../services/auth-http.js';
-import { httpBookingService } from '../services/booking-http.js';
+import { getAuthService } from '../services/auth-http.js';
+import { getBookingService } from '../services/booking-http.js';
+import { parseLibrarySystem } from '../services/library-system.js';
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.post('/login', async (req: Request, res: Response) => {
   console.log('[AUTH ROUTE] Request body:', { ...req.body, pin: '****' });
   
   try {
-    const { libraryCard, pin, bookingUrl }: { libraryCard: string; pin: string; bookingUrl?: string } = req.body;
+    const { libraryCard, pin, bookingUrl, system }: { libraryCard: string; pin: string; bookingUrl?: string; system?: string } = req.body;
 
     if (!libraryCard || !pin) {
       console.log('[AUTH ROUTE] Validation failed: missing credentials');
@@ -30,12 +31,15 @@ router.post('/login', async (req: Request, res: Response) => {
 
     // Use HTTP-based auth (no Puppeteer needed)
     let result;
+    const resolvedSystem = parseLibrarySystem(system);
+    const authService = getAuthService(resolvedSystem);
+
     if (bookingUrl) {
       console.log('[AUTH ROUTE] Using HTTP auth with booking URL');
-      result = await httpAuthService.loginForBooking({ libraryCard, pin }, bookingUrl);
+      result = await authService.loginForBooking({ libraryCard, pin }, bookingUrl);
     } else {
       console.log('[AUTH ROUTE] Using HTTP auth (standard login)');
-      result = await httpAuthService.login({ libraryCard, pin });
+      result = await authService.login({ libraryCard, pin });
     }
 
     console.log('[AUTH ROUTE] Auth result:', { ...result, token: result.token ? '****' : undefined });
@@ -68,7 +72,7 @@ router.post('/verify', async (req: Request, res: Response) => {
   console.log('[AUTH ROUTE] Request body:', { ...req.body, pin: '****' });
 
   try {
-    const { libraryCard, pin }: { libraryCard: string; pin: string } = req.body;
+    const { libraryCard, pin, system }: { libraryCard: string; pin: string; system?: string } = req.body;
 
     if (!libraryCard || !pin) {
       return res.status(400).json({
@@ -78,7 +82,9 @@ router.post('/verify', async (req: Request, res: Response) => {
     }
 
     console.log('[AUTH ROUTE] Verifying credentials via HTTP auth');
-    const result = await httpAuthService.login({ libraryCard, pin });
+    const resolvedSystem = parseLibrarySystem(system);
+    const authService = getAuthService(resolvedSystem);
+    const result = await authService.login({ libraryCard, pin });
 
     if (!result.success) {
       console.log('[AUTH ROUTE] Verification failed');
@@ -88,7 +94,7 @@ router.post('/verify', async (req: Request, res: Response) => {
     // Clean up temporary session if one was created
     if (result.sessionId) {
       try {
-        httpAuthService.deleteSession(result.sessionId);
+        authService.deleteSession(result.sessionId);
       } catch (e) {
         // noop
       }
@@ -115,7 +121,7 @@ router.post('/verify', async (req: Request, res: Response) => {
  */
 router.post('/logout', (req: Request, res: Response) => {
   try {
-    const { sessionId } = req.body;
+    const { sessionId, system }: { sessionId: string; system?: string } = req.body;
 
     if (!sessionId) {
       return res.status(400).json({
@@ -124,7 +130,9 @@ router.post('/logout', (req: Request, res: Response) => {
       });
     }
 
-    const success = httpAuthService.logout(sessionId);
+    const resolvedSystem = parseLibrarySystem(system);
+    const authService = getAuthService(resolvedSystem);
+    const success = authService.logout(sessionId);
 
     res.json({ success });
   } catch (error: any) {
@@ -143,8 +151,10 @@ router.post('/logout', (req: Request, res: Response) => {
 router.get('/session/:sessionId', (req: Request, res: Response) => {
   try {
     const { sessionId } = req.params;
+    const resolvedSystem = parseLibrarySystem(req.query.system);
+    const authService = getAuthService(resolvedSystem);
 
-    const session = httpAuthService.getSession(sessionId);
+    const session = authService.getSession(sessionId);
 
     if (!session) {
       return res.status(401).json({
@@ -173,7 +183,7 @@ router.get('/session/:sessionId', (req: Request, res: Response) => {
  */
 router.post('/crc', (req: Request, res: Response) => {
   try {
-    const { museum, pass, date } = req.body;
+    const { museum, pass, date, system } = req.body;
 
     if (!museum || !pass || !date) {
       return res.status(400).json({
@@ -181,7 +191,9 @@ router.post('/crc', (req: Request, res: Response) => {
       });
     }
 
-    const crc = httpBookingService.calculateCRC(museum, pass, date);
+    const resolvedSystem = parseLibrarySystem(system);
+    const bookingService = getBookingService(resolvedSystem);
+    const crc = bookingService.calculateCRC(museum, pass, date);
 
     res.json({ crc });
   } catch (error: any) {

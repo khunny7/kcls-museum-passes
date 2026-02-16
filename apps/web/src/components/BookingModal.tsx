@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 
 interface BookingModalProps {
   isOpen: boolean
@@ -42,8 +43,8 @@ export function BookingModal({ isOpen, onClose, onConfirm, date, passName, isLoa
     day: 'numeric'
   })
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+  return createPortal(
+    <div className="fixed inset-0 z-50">
       {/* Backdrop */}
       <div 
         className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
@@ -51,7 +52,8 @@ export function BookingModal({ isOpen, onClose, onConfirm, date, passName, isLoa
       />
       
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
         <div 
           className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full transform transition-all"
           onClick={(e) => e.stopPropagation()}
@@ -158,7 +160,9 @@ export function BookingModal({ isOpen, onClose, onConfirm, date, passName, isLoa
             </button>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

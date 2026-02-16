@@ -1,11 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+﻿import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { BookingModal } from './BookingModal'
 import { BookingResultModal } from './BookingResultModal'
 import { ScheduleFutureModal } from './ScheduleFutureModal'
 import { BookingOptionsModal } from './BookingOptionsModal'
-
-const CREDENTIALS_STORAGE_KEY = 'kcls_credentials'
+import { useLibrarySystem } from '../contexts/LibrarySystemContext'
+import { STORAGE_KEYS } from '../utils/librarySystem'
 
 interface AvailabilitySlot {
   date: string
@@ -32,12 +33,13 @@ interface AvailabilityCalendarProps {
   onDateSelect: (date: string) => void
 }
 
-async function fetchAvailability(passId: string, date: string): Promise<AvailabilitySlot[]> {
+async function fetchAvailability(passId: string, date: string, system: string): Promise<AvailabilitySlot[]> {
   const params = new URLSearchParams({
     date,
     digital: 'true',
     physical: 'false',
-    location: '0'
+    location: '0',
+    system
   })
 
   const response = await fetch(`/api/passes/${passId}/availability?${params}`, {
@@ -65,6 +67,8 @@ async function bookPass(passId: string, data: any): Promise<BookingResult> {
 }
 
 export function AvailabilityCalendar({ passId, museumId, passName, selectedDate, onDateSelect }: AvailabilityCalendarProps) {
+  const { system } = useLibrarySystem()
+  const credentialsKey = STORAGE_KEYS.credentials(system)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [showBookingModal, setShowBookingModal] = useState(false)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
@@ -79,7 +83,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
   const handleBooking = (slot: AvailabilitySlot) => {
     if (!slot.available) return
     
-    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    const stored = localStorage.getItem(credentialsKey)
     if (!stored) {
       alert('Please set your library credentials first using the button in the header.')
       return
@@ -113,7 +117,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
   }
 
   const handleScheduleFutureBooking = (date: string) => {
-    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    const stored = localStorage.getItem(credentialsKey)
     if (!stored) {
       alert('Please set your library credentials first using the button in the header.')
       return
@@ -139,7 +143,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
     setShowScheduleModal(false)
     setIsScheduling(true)
 
-    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    const stored = localStorage.getItem(credentialsKey)
     if (!stored) {
       setBookingResult({
         success: false,
@@ -177,7 +181,8 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
           digital: true,
           physical: false,
           location: '0',
-          customScheduledTime: scheduledTime
+          customScheduledTime: scheduledTime,
+          system
         }),
       })
 
@@ -219,8 +224,8 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
   const monthKey = getMonthStartDate(currentMonth)
 
   const { data: availability, isLoading, refetch } = useQuery({
-    queryKey: ['availability', passId, monthKey],
-    queryFn: () => fetchAvailability(passId, monthKey),
+    queryKey: ['availability', passId, monthKey, system],
+    queryFn: () => fetchAvailability(passId, monthKey, system),
     staleTime: 60000,
     gcTime: 5 * 60 * 1000,
     refetchOnMount: false,
@@ -273,7 +278,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
     
     setShowBookingModal(false)
 
-    const stored = localStorage.getItem(CREDENTIALS_STORAGE_KEY)
+    const stored = localStorage.getItem(credentialsKey)
     if (!stored) {
       setBookingResult({
         success: false,
@@ -296,16 +301,21 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
     }
 
     // Single unified call - login + book handled by backend
+    const creds: Record<string, string> = {
+      libraryCard: credentials.libraryCard,
+      pin: credentials.pin
+    }
+    if (credentials.email) {
+      creds.email = credentials.email
+    }
     bookingMutation.mutate({
       date: selectedSlot.date,
       passId: selectedSlot.passId,
       digital: selectedSlot.digital,
       physical: selectedSlot.physical,
       location: '0',
-      credentials: {
-        libraryCard: credentials.libraryCard,
-        pin: credentials.pin
-      }
+      credentials: creds,
+      system
     })
   }
 
@@ -333,7 +343,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
 
   const goToMonth = (target: Date) => {
     const targetKey = getMonthStartDate(target)
-    queryClient.removeQueries({ queryKey: ['availability', passId, targetKey], exact: true })
+    queryClient.removeQueries({ queryKey: ['availability', passId, targetKey, system], exact: true })
     setCurrentMonth(target)
   }
 
@@ -374,7 +384,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
           </h3>
           <button
             onClick={() => {
-              queryClient.removeQueries({ queryKey: ['availability', passId, monthKey], exact: true })
+              queryClient.removeQueries({ queryKey: ['availability', passId, monthKey, system], exact: true })
               refetch()
             }}
             disabled={isLoading}
@@ -519,6 +529,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
         museumId={museumId}
         passName={passName}
         isLoading={isScheduling}
+        system={system}
       />
 
       <BookingResultModal
@@ -530,7 +541,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
         authUrl={bookingResult?.authUrl}
       />
 
-      {bookingMutation.isPending && (
+      {bookingMutation.isPending && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4">
             <div className="flex flex-col items-center gap-6">
@@ -573,7 +584,8 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
               </p>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

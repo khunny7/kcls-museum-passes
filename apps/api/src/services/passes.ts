@@ -2,6 +2,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import type { AxiosInstance } from 'axios';
 import museumsDataJson from '../data/museums.json';
+import { LibrarySystemConfig, SYSTEM_CONFIG } from './library-system.js';
 
 export interface MuseumMetadata {
   id: string;
@@ -27,6 +28,8 @@ export interface Pass {
   imageUrl?: string;
   available: boolean;
   metadata?: MuseumMetadata;
+  bookingUrl?: string;
+  passId?: string;
 }
 
 export interface PassDetails extends Pass {
@@ -64,10 +67,15 @@ export interface BookingResult {
 
 export class PassesService {
   private readonly client: AxiosInstance;
-  private readonly baseUrl = 'https://rooms.kcls.org';
+  private readonly baseUrl: string;
   private readonly museums: Map<string, MuseumMetadata>;
+  private readonly config: LibrarySystemConfig;
+  // Cache mapping pass slug/ID to the hex museum API ID (extracted from springyPage.museum)
+  private readonly museumApiIdCache: Map<string, string> = new Map();
 
-  constructor() {
+  constructor(config: LibrarySystemConfig, museumsDataOverride?: MuseumsDataFile) {
+    this.config = config;
+    this.baseUrl = config.baseUrl;
     this.client = axios.create({
       baseURL: this.baseUrl,
       timeout: 30000,
@@ -77,8 +85,9 @@ export class PassesService {
     });
     
     // Load museums into a Map for quick lookup
+    const data = museumsDataOverride || museumsData;
     this.museums = new Map(
-      museumsData.museums.map((m: MuseumMetadata) => [m.id, m])
+      data.museums?.map((m: MuseumMetadata) => [m.id, m]) || []
     );
   }
 
@@ -86,9 +95,55 @@ export class PassesService {
     return this.museums.get(passId);
   }
 
+  /**
+   * Extract the hex museum API ID from a pass detail page.
+   * Seattle's pass pages have a JS variable: var springyPage = { museum: '3cec43a0d6e8', ... }
+   * This hex ID is what the availability API needs (not the URL slug).
+   * For KCLS, the URL slug IS the hex ID, so this is a no-op.
+   */
+  private async resolveMuseumApiId(passSlug: string): Promise<string> {
+    // Check cache first
+    const cached = this.museumApiIdCache.get(passSlug);
+    if (cached) return cached;
+
+    // If the slug already looks like a hex ID (KCLS style), use it directly
+    if (/^[a-f0-9]{8,}$/.test(passSlug)) {
+      this.museumApiIdCache.set(passSlug, passSlug);
+      return passSlug;
+    }
+
+    // Fetch the pass detail page and extract springyPage.museum
+    try {
+      console.log(`Resolving museum API ID for slug "${passSlug}" from ${this.config.label} detail page...`);
+      const response = await this.client.get(`/passes/${passSlug}`);
+      const html = response.data as string;
+      
+      // Look for: var springyPage = { museum: '3cec43a0d6e8', ... }
+      const match = html.match(/springyPage\s*=\s*\{[^}]*museum\s*:\s*'([a-f0-9]+)'/);
+      if (match && match[1]) {
+        const hexId = match[1];
+        console.log(`Resolved slug "${passSlug}" -> museum API ID "${hexId}"`);
+        this.museumApiIdCache.set(passSlug, hexId);
+        return hexId;
+      }
+      
+      console.warn(`Could not find springyPage.museum in detail page for "${passSlug}", using slug as-is`);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log(`Pass "${passSlug}" not found on ${this.config.label} (404) during API ID resolution`);
+      } else {
+        console.error(`Error resolving museum API ID for "${passSlug}":`, error.message);
+      }
+    }
+
+    // Fallback: use the slug as-is
+    this.museumApiIdCache.set(passSlug, passSlug);
+    return passSlug;
+  }
+
   async getAllPasses(): Promise<Pass[]> {
     try {
-      console.log('Fetching real passes from KCLS website...');
+      console.log(`Fetching real passes from ${this.config.label} website...`);
       const response = await this.client.get('/passes');
       const $ = cheerio.load(response.data);
       const passes: Pass[] = [];
@@ -114,7 +169,11 @@ export class PassesService {
               id,
               name,
               description,
-              imageUrl: imageUrl?.startsWith('http') ? imageUrl : `https://d2jv02qf7xgjwx.cloudfront.net${imageUrl}`,
+              imageUrl: imageUrl?.startsWith('http')
+                ? imageUrl
+                : this.config.imageBaseUrl
+                  ? `${this.config.imageBaseUrl}${imageUrl}`
+                  : undefined,
               available: true, // We'll check actual availability via the API
               metadata: this.getMuseumMetadata(id)
             });
@@ -122,24 +181,28 @@ export class PassesService {
         }
       });
 
-      console.log(`Successfully scraped ${passes.length} passes from KCLS`);
+      console.log(`Successfully scraped ${passes.length} passes from ${this.config.label}`);
       
       if (passes.length > 0) {
         return passes;
       } else {
-        console.warn('No passes found in KCLS HTML, falling back to known passes');
+        console.warn(`No passes found in ${this.config.label} HTML, falling back to known passes`);
         // Fallback to known passes if scraping fails
         return this.getFallbackPasses();
       }
       
     } catch (error: any) {
-      console.error('Error scraping passes from KCLS:', error.message);
+      console.error(`Error scraping passes from ${this.config.label}:`, error.message);
       console.log('Falling back to known passes');
       return this.getFallbackPasses();
     }
   }
 
   private getFallbackPasses(): Pass[] {
+    if (this.config.id !== 'kcls') {
+      return [];
+    }
+
     // Fallback list of known KCLS passes if scraping fails
     return [
       {
@@ -266,19 +329,31 @@ export class PassesService {
 
   async getPassDetails(id: string): Promise<PassDetails | null> {
     try {
-      console.log(`Fetching pass details for ${id} from KCLS...`);
+      console.log(`Fetching pass details for ${id} from ${this.config.label}...`);
       const response = await this.client.get(`/passes/${id}`);
-      const $ = cheerio.load(response.data);
+      const html = response.data as string;
+      const $ = cheerio.load(html);
+      
+      // While we have the detail page, extract and cache the hex museum API ID
+      const springyMatch = html.match(/springyPage\s*=\s*\{[^}]*museum\s*:\s*'([a-f0-9]+)'/);
+      if (springyMatch && springyMatch[1]) {
+        this.museumApiIdCache.set(id, springyMatch[1]);
+        console.log(`Cached museum API ID for "${id}" -> "${springyMatch[1]}"`);
+      }
       
       // Extract pass details from the page
-      const name = $('h1.s-lc-public-header-title, .s-lc-eq-location-name').first().text().trim();
+      const name = $('h1.s-lc-public-header-title, .s-lc-eq-location-name, h1#s-lc-public-pt').first().text().trim();
       const description = $('.s-lc-location-description p').first().text().trim() || 
-                         $('.s-lc-eq-location-description').text().trim();
+                         $('.s-lc-eq-location-description').text().trim() ||
+                         $('#s-lc-public-pd').text().trim();
       
       // Get full description (may include multiple paragraphs)
       let fullDescription = '';
-      $('.s-lc-location-description').each((_, el) => {
-        fullDescription += $(el).text().trim() + '\n\n';
+      $('.s-lc-location-description, .s-lc-eq-location-description, #s-lc-public-pd').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text) {
+          fullDescription += text + '\n\n';
+        }
       });
       
       const imageUrl = $('.s-lc-location-image img, .s-lc-eq-location-image img').first().attr('src');
@@ -291,15 +366,30 @@ export class PassesService {
         name: name || metadata?.name || 'Unknown Museum',
         description: description || 'No description available',
         fullDescription: fullDescription.trim() || description,
-        location: 'King County Library System',
-        imageUrl: imageUrl?.startsWith('http') ? imageUrl : `https://d2jv02qf7xgjwx.cloudfront.net${imageUrl}`,
+        location: this.config.label,
+        imageUrl: imageUrl?.startsWith('http')
+          ? imageUrl
+          : this.config.imageBaseUrl
+            ? `${this.config.imageBaseUrl}${imageUrl}`
+            : undefined,
         available: true,
         metadata
       };
-    } catch (error) {
-      console.error(`Error fetching pass details for ${id}:`, error);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log(`Pass "${id}" not found on ${this.config.label} (404)`);
+      } else {
+        console.error(`Error fetching pass details for ${id} from ${this.config.label}:`, error.message || error);
+      }
       return null;
     }
+  }
+
+  private formatAvailabilityParam(value: boolean): string {
+    if (this.config.availabilityParamFormat === 'boolean') {
+      return value ? 'true' : 'false';
+    }
+    return value ? '1' : '0';
   }
 
   async getPassAvailability(
@@ -310,17 +400,20 @@ export class PassesService {
     location: string = '0'
   ): Promise<AvailabilitySlot[]> {
     try {
-      // Call the real KCLS availability API - returns HTML calendar
+      // Resolve the actual hex museum API ID (needed for Seattle where URL slug != API ID)
+      const resolvedMuseumId = await this.resolveMuseumApiId(museumId);
+
+      // Call the real availability API - returns HTML calendar
       const url = `/pass/availability/institution`;
       const params = {
-        museum: museumId,
+        museum: resolvedMuseumId,
         date,
-        digital: digital ? '1' : '0',
-        physical: physical ? '1' : '0',
+        digital: this.formatAvailabilityParam(digital),
+        physical: this.formatAvailabilityParam(physical),
         location
       };
 
-      console.log(`Fetching real availability for museum ${museumId} on ${date}`);
+      console.log(`Fetching real availability for museum ${museumId} (apiId: ${resolvedMuseumId}) on ${date} (${this.config.id})`);
       const response = await this.client.get(url, { params });
       
       // Parse the HTML response to extract availability information
@@ -385,7 +478,7 @@ export class PassesService {
         }
       });
       
-      console.log(`Parsed ${slots.length} availability slots from KCLS calendar`);
+      console.log(`Parsed ${slots.length} availability slots from ${this.config.label} calendar`);
       return slots;
       
     } catch (error: any) {
@@ -393,7 +486,7 @@ export class PassesService {
       
       // For debugging: log the full error details
       if (error.response) {
-        console.error('KCLS API error response:', error.response.status);
+        console.error(`${this.config.label} API error response:`, error.response.status);
       }
       
       // Return empty array instead of mock data to show real system status
@@ -412,8 +505,8 @@ export class PassesService {
       const url = `/pass/availability/date`;
       const params = {
         date,
-        digital: digital ? '1' : '0',
-        physical: physical ? '1' : '0',
+        digital: this.formatAvailabilityParam(digital),
+        physical: this.formatAvailabilityParam(physical),
         location
       };
 
@@ -438,9 +531,10 @@ export class PassesService {
         const href = bookingLink.attr('href');
         
         if (href && name) {
-          // Extract museum ID from href: /passes/{museumId}/book?pass={passId}...
-          const museumIdMatch = href.match(/\/passes\/([a-f0-9]+)/);
-          const museumId = museumIdMatch ? museumIdMatch[1] : '';
+          const bookingUrl = new URL(href, this.baseUrl).toString();
+          const pathMatch = new URL(bookingUrl).pathname.match(/\/passes\/([^/]+)\/book/);
+          const museumId = pathMatch ? pathMatch[1] : '';
+          const passParam = new URL(bookingUrl).searchParams.get('pass') || '';
           
           if (museumId) {
             passes.push({
@@ -448,20 +542,22 @@ export class PassesService {
               name,
               description,
               imageUrl: imageUrl?.startsWith('http') ? imageUrl : undefined,
-              available: true // If it's in this list, it's available for this date
+              available: true, // If it's in this list, it's available for this date
+              bookingUrl,
+              passId: passParam || undefined
             });
           }
         }
       });
 
-      console.log(`Found ${passes.length} available passes for ${date}`);
+      console.log(`Found ${passes.length} available passes for ${date} (${this.config.id})`);
       return passes;
       
     } catch (error: any) {
       console.error(`Error fetching passes for date ${date}:`, error.message);
       
       if (error.response) {
-        console.error('KCLS API error response:', error.response.status);
+        console.error(`${this.config.label} API error response:`, error.response.status);
       }
       
       return [];
@@ -487,4 +583,13 @@ export class PassesService {
       error: 'This booking method is deprecated. Please use the HTTP-based booking service.'
     };
   }
+}
+
+const passesServices: Record<'kcls' | 'seattle', PassesService> = {
+  kcls: new PassesService(SYSTEM_CONFIG.kcls, museumsData),
+  seattle: new PassesService(SYSTEM_CONFIG.seattle)
+};
+
+export function getPassesService(system: 'kcls' | 'seattle') {
+  return passesServices[system] || passesServices.kcls;
 }
