@@ -102,6 +102,84 @@ class HttpBookingService {
   }
 
   /**
+   * Resolve a pass slug to its hex pass ID and hex museum ID.
+   * For Seattle, the URL slug (e.g., "Childrens") differs from the hex IDs used
+   * in the booking form (museum=6d3959e80d73, pass=3ffb11657464).
+   * For KCLS, slugs ARE hex IDs so no resolution is needed.
+   * 
+   * This fetches the pass detail page to get the museum hex ID from springyPage,
+   * then fetches the availability calendar to extract the pass hex ID from links.
+   */
+  private async resolvePassIds(
+    museumSlug: string,
+    passSlug: string,
+    date: string,
+    logger?: (message: string) => void
+  ): Promise<{ museumId: string; passId: string }> {
+    const log = logger || ((msg: string) => console.log(`[HttpBooking] ${msg}`));
+    
+    // If both already look like hex IDs, no resolution needed (KCLS case)
+    const isHex = /^[a-f0-9]{8,}$/;
+    if (isHex.test(museumSlug) && isHex.test(passSlug)) {
+      return { museumId: museumSlug, passId: passSlug };
+    }
+
+    let resolvedMuseumId = museumSlug;
+    let resolvedPassId = passSlug;
+
+    const client = this.createClient();
+
+    try {
+      // Step 1: Get the museum hex ID from the pass detail page
+      log(`Resolving IDs for slug "${museumSlug}" (pass: "${passSlug}")...`);
+      const detailResponse = await client.get(`/passes/${museumSlug}`, {
+        headers: this.getBaseHeaders(),
+      });
+
+      if (detailResponse.status === 200) {
+        const html = detailResponse.data as string;
+        
+        // Extract museum hex ID from springyPage
+        const springyMatch = html.match(/springyPage\s*=\s*\{[^}]*museum\s*:\s*'([a-f0-9]+)'/);
+        if (springyMatch && springyMatch[1]) {
+          resolvedMuseumId = springyMatch[1];
+          log(`Resolved museum slug "${museumSlug}" -> hex "${resolvedMuseumId}"`);
+        }
+      }
+
+      // Step 2: Get the pass hex ID from the availability calendar
+      // Use the resolved museum hex ID (or original slug) to fetch availability
+      const availUrl = `/pass/availability/institution`;
+      const availResponse = await client.get(availUrl, {
+        params: {
+          museum: resolvedMuseumId,
+          date,
+          digital: this.config.id === 'kcls' ? '1' : 'true',
+          physical: this.config.id === 'kcls' ? '0' : 'false',
+          location: '0',
+        },
+        headers: this.getBaseHeaders(),
+      });
+
+      if (availResponse.status === 200) {
+        const availHtml = availResponse.data as string;
+        // Extract pass hex ID from any availability link: pass=3ffb11657464
+        const passMatch = availHtml.match(/pass=([a-f0-9]{8,})/);
+        if (passMatch && passMatch[1]) {
+          resolvedPassId = passMatch[1];
+          log(`Resolved pass slug "${passSlug}" -> hex "${resolvedPassId}"`);
+        } else {
+          log(`⚠️ Could not find pass hex ID in availability page, using "${passSlug}" as-is`);
+        }
+      }
+    } catch (error: any) {
+      log(`⚠️ Error resolving pass IDs: ${error.message}. Using originals.`);
+    }
+
+    return { museumId: resolvedMuseumId, passId: resolvedPassId };
+  }
+
+  /**
    * Get base headers for HTTP requests
    */
   private getBaseHeaders(): Record<string, string> {
@@ -250,6 +328,20 @@ class HttpBookingService {
       // Step 2: Look for the booking form and extract required fields
       const bookingForm = $('#s-lc-rm-form, #booking-form, form[action*="book"]');
       
+      // Extract the form action URL — for Seattle, the form action contains the hex museum ID
+      // (e.g., /passes/6d3959e80d73/book) which differs from the URL slug (e.g., /passes/Childrens/book)
+      let formActionUrl = bookingForm.attr('action') || '';
+      if (formActionUrl && !formActionUrl.startsWith('/')) {
+        // Relative URL — make it absolute path
+        formActionUrl = '/' + formActionUrl;
+      }
+      if (!formActionUrl) {
+        formActionUrl = `/passes/${museumId}/book`;
+        console.log(`[HttpBooking] No form action found, using default: ${formActionUrl}`);
+      } else {
+        console.log(`[HttpBooking] Form action URL: ${formActionUrl}`);
+      }
+      
       if (bookingForm.length === 0) {
         // Maybe we need to accept terms first
         const termsForm = $('#terms-form, form:has(#terms_accept)');
@@ -338,11 +430,13 @@ class HttpBookingService {
       }
 
       // Get cookies for the submit request
-      const submitCookies = await this.getCookieHeader(jar, `${this.config.baseUrl}/passes/${museumId}/book`);
+      const submitCookies = await this.getCookieHeader(jar, `${this.config.baseUrl}${formActionUrl}`);
       console.log('[HttpBooking] Cookies for submit:', submitCookies ? `${submitCookies.length} chars` : 'NONE');
 
-      // Submit the booking
-      const submitResponse = await client.post(`/passes/${museumId}/book`, bookingFormData.toString(), {
+      // Submit the booking to the form action URL (uses hex museum ID for Seattle)
+      console.log(`[HttpBooking] POST ${formActionUrl}`);
+      console.log(`[HttpBooking] Form data: ${bookingFormData.toString()}`);
+      const submitResponse = await client.post(formActionUrl, bookingFormData.toString(), {
         headers: {
           ...this.getBaseHeaders(),
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -353,7 +447,7 @@ class HttpBookingService {
       });
       
       // Store any new cookies from response
-      await this.storeCookiesFromResponse(jar, submitResponse, `${this.config.baseUrl}/passes/${museumId}/book`);
+      await this.storeCookiesFromResponse(jar, submitResponse, `${this.config.baseUrl}${formActionUrl}`);
 
       console.log('[HttpBooking] Submit response status:', submitResponse.status);
 
@@ -398,6 +492,22 @@ class HttpBookingService {
       console.log('[HttpBooking] ⚠️ Uncertain result, page content (first 1000 chars):');
       console.log(submitResponse.data.substring(0, 1000));
 
+      // If the submit response was an HTTP error (4xx/5xx), treat as failure
+      if (submitResponse.status >= 400) {
+        console.log(`[HttpBooking] ❌ Booking failed: HTTP ${submitResponse.status}`);
+        
+        // Try to extract any useful error text from the response body
+        const bodyText = $result('body').text().replace(/\s+/g, ' ').trim().substring(0, 300);
+        
+        return {
+          success: false,
+          error: `Booking failed (HTTP ${submitResponse.status}). ${bodyText || 'No additional details.'}`,
+          details: {
+            status: submitResponse.status,
+          },
+        };
+      }
+
       // Check if we're still on the booking page (might need more steps)
       if (pageText.includes('reserve') || pageText.includes('confirm')) {
         // Might need to click confirm button - try a second POST
@@ -431,11 +541,11 @@ class HttpBookingService {
         }
       }
 
-      // Return uncertain result
+      // Return uncertain result — only reachable for 2xx/3xx responses with no clear indicators
       return {
-        success: true, // Assume success if no error
+        success: false,
         bookingId: `booking_${Date.now()}`,
-        message: 'Booking submitted. Please verify in your reservations.',
+        message: 'Booking result uncertain. Please verify in your reservations.',
         details: {
           status: submitResponse.status,
           mayNeedVerification: true,
@@ -500,6 +610,18 @@ class HttpBookingService {
     const log = logger || ((msg: string) => console.log(`[HttpBooking] ${msg}`));
 
     try {
+      // Step 0: Resolve slug IDs to hex IDs (needed for Seattle)
+      // For scheduled bookings, passId may be a slug like "Childrens" instead of hex "3ffb11657464"
+      const isHex = /^[a-f0-9]{8,}$/;
+      if (!isHex.test(request.passId) || !isHex.test(request.museumId)) {
+        log(`Resolving non-hex IDs: museum="${request.museumId}", pass="${request.passId}"`);
+        const resolved = await this.resolvePassIds(request.museumId, request.passId, request.date, log);
+        request.passId = resolved.passId;
+        // Keep the slug as museumId for the booking URL path (server accepts it)
+        // but log the resolved museum hex ID for reference
+        log(`Using resolved IDs: museum="${request.museumId}" (hex: ${resolved.museumId}), pass="${request.passId}"`);
+      }
+
       // Step 1: Build the booking URL
       const bookingUrl = this.buildBookingUrl(request);
       log(`Booking URL: ${bookingUrl}`);
