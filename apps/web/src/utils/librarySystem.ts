@@ -39,8 +39,8 @@ export interface SystemTheme {
 export interface SystemScheduleConfig {
   /** How many days in advance passes become available */
   advanceDays: number
-  /** Hour in UTC when new passes open */
-  openHourUTC: number
+  /** Hour in Pacific time when new passes open */
+  openHourPacific: number
   /** Human-readable description of the open time */
   openTimeLabel: string
 }
@@ -48,13 +48,13 @@ export interface SystemScheduleConfig {
 export const SYSTEM_SCHEDULE: Record<LibrarySystem, SystemScheduleConfig> = {
   kcls: {
     advanceDays: 14,
-    openHourUTC: 22, // 2 PM PST
-    openTimeLabel: '2:00 PM PST',
+    openHourPacific: 14,
+    openTimeLabel: '2:00 PM Pacific',
   },
   seattle: {
     advanceDays: 31,
-    openHourUTC: 20, // 12 PM (noon) PST
-    openTimeLabel: '12:00 PM PST',
+    openHourPacific: 12,
+    openTimeLabel: '12:00 PM Pacific',
   },
 }
 

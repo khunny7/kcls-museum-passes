@@ -191,7 +191,7 @@ export function AvailabilityCalendar({ passId, museumId, passName, selectedDate,
       if (result.success) {
         setBookingResult({
           success: true,
-          message: `Booking scheduled successfully! It will run automatically on ${new Date(result.booking.scheduledFor).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}.`
+          message: `Booking scheduled successfully! It will run automatically on ${new Date(result.booking.scheduledFor).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles', timeZoneName: 'short' })}.`
         })
         setShowResultModal(true)
       } else {

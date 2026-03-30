@@ -289,6 +289,7 @@ export function ScheduledBookingsPage() {
                           day: 'numeric',
                           hour: 'numeric',
                           minute: '2-digit',
+                          timeZone: 'America/Los_Angeles',
                           timeZoneName: 'short'
                         })}
                       </p>
@@ -303,6 +304,7 @@ export function ScheduledBookingsPage() {
                               hour: 'numeric',
                               minute: '2-digit',
                               second: '2-digit',
+                              timeZone: 'America/Los_Angeles',
                               timeZoneName: 'short'
                             })
                           : 'N/A'}
@@ -385,6 +387,7 @@ export function ScheduledBookingsPage() {
                             year: 'numeric',
                             hour: 'numeric',
                             minute: '2-digit',
+                            timeZone: 'America/Los_Angeles',
                             timeZoneName: 'short'
                           })}
                         </p>

@@ -28,6 +28,25 @@ export function ScheduleFutureModal({
 
   const schedule = SYSTEM_SCHEDULE[system]
 
+  const getPacificUtcOffsetHours = (date: Date) => {
+    const tzLabel = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      timeZoneName: 'short'
+    }).formatToParts(date).find((part) => part.type === 'timeZoneName')?.value ?? ''
+
+    return tzLabel.includes('PDT') ? 7 : 8
+  }
+
+  const toDateTimeLocalValue = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  }
+
   // Calculate the scheduled time using per-system config
   const calculateScheduledTime = () => {
     const [year, month, day] = date.split('-').map(Number)
@@ -36,14 +55,17 @@ export function ScheduleFutureModal({
     const targetDate = new Date(year, month - 1, day)
     targetDate.setDate(targetDate.getDate() - schedule.advanceDays)
     
-    const pstYear = targetDate.getFullYear()
-    const pstMonth = targetDate.getMonth()
-    const pstDay = targetDate.getDate()
+    const schedYear = targetDate.getFullYear()
+    const schedMonth = targetDate.getMonth()
+    const schedDay = targetDate.getDate()
     
-    // Create UTC date at the system's opening hour
-    const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, schedule.openHourUTC, 0, 0, 0))
+    // Match the backend logic: choose the local Pacific opening time and
+    // convert it to the correct UTC instant based on PST vs PDT.
+    const refUtc = new Date(Date.UTC(schedYear, schedMonth, schedDay, 20, 0, 0, 0))
+    const pacificUtcOffsetHours = getPacificUtcOffsetHours(refUtc)
+    const openHourUTC = schedule.openHourPacific + pacificUtcOffsetHours
     
-    return utcDate
+    return new Date(Date.UTC(schedYear, schedMonth, schedDay, openHourUTC, 0, 0, 0))
   }
 
   const scheduledTime = calculateScheduledTime()
@@ -79,6 +101,12 @@ export function ScheduleFutureModal({
     }
   }, [isOpen])
 
+  useEffect(() => {
+    if (isOpen) {
+      setCustomTime(toDateTimeLocalValue(scheduledTime))
+    }
+  }, [isOpen, scheduledTime])
+
   if (!isOpen) return null
 
   const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
@@ -88,9 +116,6 @@ export function ScheduleFutureModal({
     day: 'numeric'
   })
 
-  // Format the time explicitly in PST
-  // The UTC time represents 2pm PST (22:00 UTC)
-  // We need to display it as 2pm PST
   const formattedScheduledTime = scheduledTime.toLocaleString('en-US', {
     weekday: 'short',
     year: 'numeric',
@@ -104,8 +129,9 @@ export function ScheduleFutureModal({
 
   const handleConfirm = () => {
     if (useCustomTime && customTime) {
-      // Use custom time
-      onConfirm(customTime)
+      // datetime-local is a wall-clock local time, so convert it to an
+      // unambiguous instant before sending it to the server.
+      onConfirm(new Date(customTime).toISOString())
     } else {
       // Use calculated time
       onConfirm(scheduledTime.toISOString())
