@@ -144,21 +144,33 @@ class SchedulerService {
     
     // Get per-system scheduling config
     const config = SYSTEM_CONFIG[system];
-    const advanceDays = config.advanceDays; // KCLS: 14, Seattle: 30
-    const openHourUTC = config.openHourUTC; // KCLS: 22 (2pm PST), Seattle: 20 (noon PST)
+    const advanceDays = config.advanceDays; // KCLS: 14, Seattle: 31
+    const openHourPacific = config.openHourPacific; // KCLS: 14 (2pm), Seattle: 12 (noon)
     
     // Calculate the date N days before the booking date
     const targetDate = new Date(year, month - 1, day);
     targetDate.setDate(targetDate.getDate() - advanceDays);
     
-    const pstYear = targetDate.getFullYear();
-    const pstMonth = targetDate.getMonth();
-    const pstDay = targetDate.getDate();
+    const schedYear = targetDate.getFullYear();
+    const schedMonth = targetDate.getMonth() + 1;
+    const schedDay = targetDate.getDate();
     
-    // Create UTC date at the exact opening hour
-    const utcDate = new Date(Date.UTC(pstYear, pstMonth, pstDay, openHourUTC, 0, 0, 0));
+    // Determine whether PDT or PST is in effect on the schedule date.
+    // PST = UTC-8, PDT = UTC-7 (roughly March - November).
+    // We format a reference UTC moment on that day through the Pacific timezone
+    // and check whether it reports PDT or PST.
+    const refUtc = new Date(Date.UTC(schedYear, schedMonth - 1, schedDay, 20, 0, 0));
+    const tzLabel = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      timeZoneName: 'short'
+    }).formatToParts(refUtc).find(p => p.type === 'timeZoneName')?.value ?? '';
+    const utcOffset = tzLabel.includes('PDT') ? 7 : 8; // PDT = UTC-7, PST = UTC-8
     
-    return utcDate;
+    const openHourUTC = openHourPacific + utcOffset;
+    
+    console.log(`[Scheduler] Schedule date ${schedYear}-${schedMonth}-${schedDay}: ${tzLabel} (UTC-${utcOffset}), opening at ${openHourPacific}:00 Pacific = ${openHourUTC}:00 UTC`);
+    
+    return new Date(Date.UTC(schedYear, schedMonth - 1, schedDay, openHourUTC, 0, 0, 0));
   }
 
   scheduleBooking(

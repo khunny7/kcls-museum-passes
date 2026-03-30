@@ -331,9 +331,18 @@ class HttpBookingService {
       // Extract the form action URL — for Seattle, the form action contains the hex museum ID
       // (e.g., /passes/6d3959e80d73/book) which differs from the URL slug (e.g., /passes/Childrens/book)
       let formActionUrl = bookingForm.attr('action') || '';
-      if (formActionUrl && !formActionUrl.startsWith('/')) {
-        // Relative URL — make it absolute path
-        formActionUrl = '/' + formActionUrl;
+      if (formActionUrl) {
+        if (formActionUrl.startsWith('http://') || formActionUrl.startsWith('https://')) {
+          // Absolute URL — extract path only so we can POST relative to baseUrl
+          try {
+            formActionUrl = new URL(formActionUrl).pathname;
+          } catch {
+            formActionUrl = `/passes/${museumId}/book`;
+          }
+        } else if (!formActionUrl.startsWith('/')) {
+          // Relative path — make it absolute
+          formActionUrl = '/' + formActionUrl;
+        }
       }
       if (!formActionUrl) {
         formActionUrl = `/passes/${museumId}/book`;

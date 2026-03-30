@@ -13,8 +13,8 @@ export interface LibrarySystemConfig {
   refererBase: string;
   /** How many days in advance passes become available */
   advanceDays: number;
-  /** Hour (in UTC) when new passes open. KCLS: 22 (2 PM PST), Seattle: 20 (12 PM PST) */
-  openHourUTC: number;
+  /** Hour in Pacific time (local) when new passes open. KCLS: 14 (2 PM), Seattle: 12 (noon) */
+  openHourPacific: number;
 }
 
 export const DEFAULT_LIBRARY_SYSTEM: LibrarySystem = 'kcls';
@@ -32,7 +32,7 @@ export const SYSTEM_CONFIG: Record<LibrarySystem, LibrarySystemConfig> = {
     defaultBookingPath: (date) => `/passes/33c1f0af9b02/book?date=${date}&pass=anypass&digital=1&physical=0&location=0`,
     refererBase: 'https://rooms.kcls.org/passes',
     advanceDays: 14,
-    openHourUTC: 22, // 2 PM PST (UTC-8)
+    openHourPacific: 14, // 2 PM Pacific time
   },
   seattle: {
     id: 'seattle',
@@ -45,7 +45,7 @@ export const SYSTEM_CONFIG: Record<LibrarySystem, LibrarySystemConfig> = {
     defaultBookingPath: (date) => `/passes/Childrens/book?pass=anypass&date=${date}&digital=1&physical=0&location=0`,
     refererBase: 'https://spl.libcal.com/passes',
     advanceDays: 31,
-    openHourUTC: 20, // 12 PM (noon) PST (UTC-8)
+    openHourPacific: 12, // noon Pacific time
   }
 };
 
