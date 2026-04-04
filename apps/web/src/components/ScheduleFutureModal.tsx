@@ -48,7 +48,9 @@ export function ScheduleFutureModal({
   }
 
   // Calculate the scheduled time using per-system config
-  const calculateScheduledTime = () => {
+  const calculateScheduledTime = (): Date | null => {
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
+
     const [year, month, day] = date.split('-').map(Number)
     
     // Calculate the date N days before (per system config)
@@ -102,12 +104,12 @@ export function ScheduleFutureModal({
   }, [isOpen])
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && scheduledTime) {
       setCustomTime(toDateTimeLocalValue(scheduledTime))
     }
   }, [isOpen, scheduledTime])
 
-  if (!isOpen) return null
+  if (!isOpen || !scheduledTime) return null
 
   const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long',
@@ -134,7 +136,7 @@ export function ScheduleFutureModal({
       onConfirm(new Date(customTime).toISOString())
     } else {
       // Use calculated time
-      onConfirm(scheduledTime.toISOString())
+      onConfirm(scheduledTime!.toISOString())
     }
   }
 
